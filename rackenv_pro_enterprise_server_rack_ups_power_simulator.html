@@ -1,0 +1,2955 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RackEnv Pro — Enterprise Server Rack, A/B Power & UPS Runtime Simulator</title>
+  <!-- Load Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Load Inter & JetBrains Mono for crisp DCIM engineering typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            dcim: {
+              bg: '#080c14',
+              panel: '#0f1623',
+              card: '#161f30',
+              border: '#253248',
+              hover: '#1e293b',
+              feedA: '#06b6d4',
+              feedB: '#f59e0b',
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      background-color: #080c14;
+      color: #e2e8f0;
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+    }
+
+    .font-mono-tabular {
+      font-family: 'JetBrains Mono', monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Custom subtle scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0b101b;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #28354b;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #3b4e6e;
+    }
+
+    /* Subtle radial engineering grid for center workspace */
+    .dcim-workspace-grid {
+      background-color: #080c14;
+      background-image: radial-gradient(#1e293b 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+
+    /* Steel rack rail textures and EIA-310-D cage-nut holes */
+    .rack-rail {
+      background: linear-gradient(90deg, #1a2232 0%, #263147 50%, #18202f 100%);
+      border-left: 1px solid #384661;
+      border-right: 1px solid #384661;
+    }
+
+    .cage-nut-hole {
+      width: 5px;
+      height: 5px;
+      background-color: #070a10;
+      border: 1px solid #475569;
+      border-radius: 1px;
+      box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.85);
+    }
+
+    /* LED & Alert Animations */
+    @keyframes ledBlink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+    .led-blink-fast {
+      animation: ledBlink 0.9s infinite ease-in-out;
+    }
+
+    @keyframes batteryPulse {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.45);
+        border-color: #f59e0b;
+      }
+      50% {
+        box-shadow: 0 0 14px 2px rgba(245, 158, 11, 0.65);
+        border-color: #fcd34d;
+      }
+    }
+    .ups-on-battery-pulse {
+      animation: batteryPulse 1.4s infinite ease-in-out;
+    }
+
+    @keyframes overloadPulse {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55);
+        border-color: #ef4444;
+      }
+      50% {
+        box-shadow: 0 0 18px 2px rgba(239, 68, 68, 0.85);
+        border-color: #fca5a5;
+      }
+    }
+    .overload-pulse {
+      animation: overloadPulse 1.1s infinite ease-in-out;
+    }
+
+    /* Device power visual states */
+    .chassis-offline {
+      filter: brightness(0.42) saturate(0.18);
+      transition: filter 0.25s ease;
+    }
+    .chassis-online {
+      filter: brightness(1) saturate(1);
+      transition: filter 0.25s ease;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-cyan-500/30 selection:text-cyan-200">
+
+  <!-- =====================================================================
+       TOP COMMAND HEADER
+  ====================================================================== -->
+  <header class="sticky top-0 z-40 bg-dcim-panel/95 backdrop-blur border-b border-dcim-border px-3 sm:px-5 py-2.5">
+    <div class="max-w-[1920px] mx-auto flex flex-wrap items-center justify-between gap-3">
+      <!-- Brand Identity: RackEnv Pro -->
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-cyan-500/40 flex items-center justify-center shadow-lg shadow-cyan-950/40">
+          <svg class="w-5 h-5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="4" y="2" width="16" height="20" rx="2" />
+            <line x1="4" y1="8" x2="20" y2="8" />
+            <line x1="4" y1="14" x2="20" y2="14" />
+            <circle cx="8" cy="5" r="1" fill="currentColor" />
+            <circle cx="8" cy="11" r="1" fill="currentColor" />
+            <path d="M13 16l-1.5 2.5h2L12 21" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-sm sm:text-base font-bold tracking-tight text-white">RackEnv <span class="text-cyan-400">Pro</span></h1>
+            <span class="px-1.5 py-0.5 text-[10px] font-mono-tabular font-semibold uppercase tracking-wider rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">DCIM & UPS Sim</span>
+          </div>
+          <p class="text-[11px] text-slate-400 hidden sm:block">Enterprise Rack Elevation • Dual-Bus A/B Power • UPS Runtime & BTU Telemetry</p>
+        </div>
+      </div>
+
+      <!-- Mobile Drawer Switcher (< 1024px) -->
+      <div class="flex lg:hidden items-center bg-dcim-card p-1 rounded-lg border border-dcim-border text-xs">
+        <button onclick="setMobileTab('library')" id="mob-tab-library" class="px-2.5 py-1.5 rounded-md font-medium text-slate-300 transition">Catalog</button>
+        <button onclick="setMobileTab('rack')" id="mob-tab-rack" class="px-2.5 py-1.5 rounded-md font-medium bg-cyan-600 text-white transition">Rack</button>
+        <button onclick="setMobileTab('power')" id="mob-tab-power" class="px-2.5 py-1.5 rounded-md font-medium text-slate-300 transition">Power/UPS</button>
+      </div>
+
+      <!-- Global Utility Buttons -->
+      <div class="flex items-center gap-2">
+        <button onclick="openJsonModal()" class="px-3 py-1.5 rounded-lg bg-dcim-card hover:bg-slate-800 text-slate-200 border border-dcim-border text-xs font-medium flex items-center gap-1.5 transition shadow-sm">
+          <svg class="w-3.5 h-3.5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="16 18 22 12 16 6" />
+            <polyline points="8 6 2 12 8 18" />
+          </svg>
+          <span class="hidden sm:inline">Export / Import JSON</span>
+          <span class="sm:hidden">JSON</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- =====================================================================
+       MAIN 3-COLUMN DCIM WORKSPACE
+  ====================================================================== -->
+  <main class="flex-1 max-w-[1920px] w-full mx-auto grid grid-cols-1 lg:grid-cols-[315px_1fr_410px] overflow-hidden">
+
+    <!-- ===================================================================
+         LEFT SIDEBAR: HARDWARE CATALOG & CUSTOM DEVICE / UPS CREATOR
+    ==================================================================== -->
+    <aside id="panel-library" class="bg-dcim-panel border-r border-dcim-border flex flex-col lg:h-[calc(100vh-57px)] overflow-hidden">
+      <div class="p-3.5 border-b border-dcim-border space-y-2.5">
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+            Hardware Catalog
+          </h2>
+          <button onclick="openCustomModal()" class="px-2.5 py-1 rounded-md bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold flex items-center gap-1 transition shadow-sm">
+            <span>+ Custom Device / UPS</span>
+          </button>
+        </div>
+
+        <!-- Search Filter -->
+        <div class="relative">
+          <input type="text" id="catalog-search" oninput="renderCatalog()" placeholder="Search UPS, servers, switches, SAN..." class="w-full bg-dcim-bg border border-dcim-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500" />
+          <svg class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </div>
+
+        <!-- Category Filter Pills -->
+        <div class="flex flex-wrap gap-1" id="category-tabs">
+          <button onclick="setCatalogCategory('All')" data-cat="All" class="cat-pill px-2 py-1 rounded text-[11px] font-medium bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">All</button>
+          <button onclick="setCatalogCategory('Power & UPS')" data-cat="Power & UPS" class="cat-pill px-2 py-1 rounded text-[11px] font-medium bg-dcim-card text-slate-400 border border-dcim-border hover:text-slate-200">Power & UPS</button>
+          <button onclick="setCatalogCategory('Compute Servers')" data-cat="Compute Servers" class="cat-pill px-2 py-1 rounded text-[11px] font-medium bg-dcim-card text-slate-400 border border-dcim-border hover:text-slate-200">Compute</button>
+          <button onclick="setCatalogCategory('Networking')" data-cat="Networking" class="cat-pill px-2 py-1 rounded text-[11px] font-medium bg-dcim-card text-slate-400 border border-dcim-border hover:text-slate-200">Networking</button>
+          <button onclick="setCatalogCategory('Storage & Patch')" data-cat="Storage & Patch" class="cat-pill px-2 py-1 rounded text-[11px] font-medium bg-dcim-card text-slate-400 border border-dcim-border hover:text-slate-200">Storage & Patch</button>
+        </div>
+      </div>
+
+      <!-- Tip Strip -->
+      <div class="px-3.5 py-2 bg-dcim-bg/70 border-b border-dcim-border text-[11px] text-slate-400 flex items-center justify-between">
+        <span>Drag onto rack or click <strong class="text-slate-200">+ Add</strong></span>
+        <span class="font-mono-tabular text-[10px] text-cyan-400">Snap-to-RU</span>
+      </div>
+
+      <!-- Scrollable Hardware Items -->
+      <div id="catalog-list" class="flex-1 overflow-y-auto p-3 space-y-2.5">
+        <!-- Populated by JS -->
+      </div>
+    </aside>
+
+    <!-- ===================================================================
+         CENTER WORKSPACE: INTERACTIVE RACK ELEVATION & ZERO-U PDUs
+    ==================================================================== -->
+    <section id="panel-rack" class="dcim-workspace-grid flex flex-col lg:h-[calc(100vh-57px)] overflow-hidden">
+      <!-- Center Workspace Toolbar -->
+      <div class="bg-dcim-panel/90 backdrop-blur border-b border-dcim-border px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
+        <!-- Rack Name, Rack Size & Voltage Selector -->
+        <div class="flex items-center gap-2 flex-wrap">
+          <div class="flex items-center bg-dcim-bg border border-dcim-border rounded-lg px-2.5 py-1 focus-within:border-cyan-500">
+            <span class="text-[10px] font-mono-tabular uppercase text-slate-500 mr-1.5">RACK</span>
+            <input type="text" id="rack-name-input" value="CAB-A04 // CORE-PROD-01" onchange="updateRackName(this.value)" class="bg-transparent text-xs font-mono-tabular font-semibold text-white focus:outline-none w-36 sm:w-44" />
+          </div>
+
+          <!-- Rack Size Selector -->
+          <select id="rack-height-select" onchange="changeRackHeight(parseInt(this.value, 10))" class="bg-dcim-bg border border-dcim-border rounded-lg px-2.5 py-1.5 text-xs font-mono-tabular font-semibold text-cyan-300 focus:outline-none focus:border-cyan-500" title="Rack Height in Rack Units">
+            <option value="42" selected>42U Rack</option>
+            <option value="48">48U Rack</option>
+            <option value="24">24U Rack</option>
+          </select>
+
+          <!-- System Voltage Selector (120V / 208V) -->
+          <div class="flex items-center bg-dcim-bg border border-dcim-border rounded-lg p-0.5 text-xs font-mono-tabular" title="Nominal Rack AC Distribution Voltage">
+            <button type="button" onclick="setSystemVoltage(120)" id="btn-volt-120" class="px-2 py-1 rounded-md text-slate-400 hover:text-white transition">120V</button>
+            <button type="button" onclick="setSystemVoltage(208)" id="btn-volt-208" class="px-2 py-1 rounded-md bg-cyan-600 text-white font-bold transition">208V</button>
+          </div>
+        </div>
+
+        <!-- Rack Action Buttons -->
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <button onclick="toggleTelemetryOverlay()" id="btn-toggle-overlay" class="px-2.5 py-1.5 rounded-lg bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 text-xs font-medium transition" title="Toggle live Watt/BTU overlay badges on rack hardware">
+            Overlay: <strong id="overlay-status-text">ON</strong>
+          </button>
+
+          <button onclick="loadDemoRack()" class="px-2.5 py-1.5 rounded-lg bg-dcim-card hover:bg-slate-800 text-slate-200 border border-dcim-border text-xs font-medium flex items-center gap-1 transition">
+            <svg class="w-3.5 h-3.5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+              <polyline points="7 11 12 16 17 11" />
+              <line x1="12" y1="4" x2="12" y2="16" />
+            </svg>
+            <span>Load Demo Rack</span>
+          </button>
+
+          <button onclick="confirmClearRack()" class="px-2.5 py-1.5 rounded-lg bg-rose-950/50 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 text-xs font-medium transition">
+            Clear Rack
+          </button>
+        </div>
+      </div>
+
+      <!-- Scrollable Cabinet Elevation Viewport -->
+      <div class="flex-1 overflow-y-auto p-3 sm:p-5 flex justify-center items-start">
+        <div class="w-full max-w-[760px] flex flex-col items-center select-none">
+
+          <!-- Steel Cabinet Top Crown -->
+          <div class="w-full bg-gradient-to-b from-slate-700 to-slate-800 border-2 border-slate-600 rounded-t-xl px-4 py-2 flex items-center justify-between shadow-xl">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" id="cabinet-master-led"></span>
+              <span class="font-mono-tabular text-xs font-bold tracking-wider text-slate-200" id="cabinet-header-title">CAB-A04 // CORE-PROD-01</span>
+            </div>
+            <div class="flex items-center gap-2.5 text-[11px] font-mono-tabular text-slate-300">
+              <span id="cabinet-ru-badge">42U EIA-310-D</span>
+              <span class="text-slate-500">•</span>
+              <span id="cabinet-volt-badge" class="text-cyan-400 font-semibold">208V 30A</span>
+            </div>
+          </div>
+
+          <!-- Main Cabinet Frame: [Zero-U PDU-A] + [Left RU Rail + Slots + Right RU Rail] + [Zero-U PDU-B] -->
+          <div class="w-full bg-[#0b0f19] border-x-4 border-slate-700 flex items-stretch shadow-2xl relative">
+
+            <!-- LEFT FLANKING ZERO-U PDU-A (CYAN) -->
+            <div id="pdu-strip-a" class="w-10 sm:w-13 bg-slate-900/95 border-r border-slate-700/80 flex flex-col justify-between items-center py-2 px-1 transition-all">
+              <div class="text-center">
+                <div class="text-[9px] font-mono-tabular font-bold text-cyan-400 leading-tight">PDU-A</div>
+                <div id="pdu-a-status-dot" class="w-2 h-2 rounded-full bg-cyan-400 mx-auto mt-1 shadow-[0_0_6px_#22d3ee]"></div>
+              </div>
+
+              <div class="flex-1 w-3 my-2 bg-slate-950 rounded-full border border-slate-800 overflow-hidden flex flex-col justify-end relative">
+                <div id="pdu-a-vertical-fill" class="w-full bg-gradient-to-t from-cyan-600 to-cyan-400 transition-all duration-300" style="height: 0%"></div>
+              </div>
+
+              <div class="text-center">
+                <div id="pdu-a-pct-mini" class="text-[9px] font-mono-tabular font-bold text-cyan-300">0%</div>
+                <div id="pdu-a-src-mini" class="text-[7px] font-mono-tabular text-slate-400 uppercase mt-0.5">COMM A</div>
+              </div>
+            </div>
+
+            <!-- CENTER 19" RACK MOUNTING FRAME -->
+            <div class="flex-1 flex flex-col min-w-0">
+              <div class="flex items-stretch relative" id="rack-body-wrapper">
+                <!-- Left RU Numbering & Cage-Nut Rail -->
+                <div id="rack-rail-left" class="rack-rail w-9 sm:w-11 flex flex-col shrink-0"></div>
+
+                <!-- Interactive Drop & Snap Zone -->
+                <div id="rack-drop-zone" class="flex-1 relative bg-[#070a11] overflow-hidden">
+                  <!-- Background 1U Horizontal Slot Lines -->
+                  <div id="rack-grid-lines" class="absolute inset-0 pointer-events-none flex flex-col"></div>
+
+                  <!-- Snap-to-RU Drag Ghost Highlight -->
+                  <div id="rack-snap-ghost" class="hidden absolute left-1 right-1 z-30 rounded-md border-2 border-dashed pointer-events-none flex items-center justify-center transition-all duration-75">
+                    <span id="rack-snap-label" class="px-2.5 py-0.5 rounded bg-slate-950/90 font-mono-tabular text-xs font-bold shadow-lg"></span>
+                  </div>
+
+                  <!-- Installed Devices Layer -->
+                  <div id="rack-devices-layer" class="relative w-full z-20"></div>
+                </div>
+
+                <!-- Right RU Numbering & Cage-Nut Rail -->
+                <div id="rack-rail-right" class="rack-rail w-9 sm:w-11 flex flex-col shrink-0"></div>
+              </div>
+            </div>
+
+            <!-- RIGHT FLANKING ZERO-U PDU-B (AMBER) -->
+            <div id="pdu-strip-b" class="w-10 sm:w-13 bg-slate-900/95 border-l border-slate-700/80 flex flex-col justify-between items-center py-2 px-1 transition-all">
+              <div class="text-center">
+                <div class="text-[9px] font-mono-tabular font-bold text-amber-400 leading-tight">PDU-B</div>
+                <div id="pdu-b-status-dot" class="w-2 h-2 rounded-full bg-amber-400 mx-auto mt-1 shadow-[0_0_6px_#fbbf24]"></div>
+              </div>
+
+              <div class="flex-1 w-3 my-2 bg-slate-950 rounded-full border border-slate-800 overflow-hidden flex flex-col justify-end relative">
+                <div id="pdu-b-vertical-fill" class="w-full bg-gradient-to-t from-amber-600 to-amber-400 transition-all duration-300" style="height: 0%"></div>
+              </div>
+
+              <div class="text-center">
+                <div id="pdu-b-pct-mini" class="text-[9px] font-mono-tabular font-bold text-amber-300">0%</div>
+                <div id="pdu-b-src-mini" class="text-[7px] font-mono-tabular text-slate-400 uppercase mt-0.5">COMM B</div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Cabinet Base & Casters -->
+          <div class="w-full bg-gradient-to-t from-slate-800 to-slate-700 border-2 border-slate-600 rounded-b-xl px-5 py-2 flex items-center justify-between shadow-xl">
+            <span class="text-[10px] font-mono-tabular text-slate-400">RACKENV PRO • FRONT ELEVATION</span>
+            <span class="text-[10px] font-mono-tabular text-slate-300" id="footer-ru-summary">0 / 42 RU USED</span>
+          </div>
+          <div class="w-[88%] flex justify-between px-6">
+            <div class="w-10 h-2.5 bg-slate-800 border-x border-b border-slate-600 rounded-b"></div>
+            <div class="w-10 h-2.5 bg-slate-800 border-x border-b border-slate-600 rounded-b"></div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================================
+         RIGHT SIDEBAR: OUTAGE SIMULATOR, UPS WIRING/BATTERY, TOPOLOGY & TELEMETRY
+    ==================================================================== -->
+    <aside id="panel-power" class="bg-dcim-panel border-l border-dcim-border flex flex-col lg:h-[calc(100vh-57px)] overflow-y-auto p-3.5 space-y-3.5">
+
+      <!-- 1. COMMERCIAL POWER OUTAGE & SIMULATION SPEED CONTROLS -->
+      <div class="bg-dcim-card border border-dcim-border rounded-xl p-3.5 space-y-3 shadow-lg">
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
+            <svg class="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+            </svg>
+            <span>Commercial Power & Outage Sim</span>
+          </h2>
+          <span id="sim-global-badge" class="px-2 py-0.5 rounded-full text-[10px] font-mono-tabular font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+            UTILITY OK
+          </span>
+        </div>
+
+        <!-- Upstream Commercial Feed A & Commercial Feed B Breakers -->
+        <div class="grid grid-cols-2 gap-2.5">
+          <!-- Commercial Feed A -->
+          <div id="breaker-card-a" class="bg-dcim-bg border border-cyan-500/40 rounded-lg p-2.5 flex flex-col justify-between gap-2 transition-all">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-bold text-cyan-400">COMMERCIAL A</span>
+              <span id="breaker-led-a" class="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]"></span>
+            </div>
+            <button onclick="toggleCommercialFeed('A')" id="btn-breaker-a" class="w-full py-1.5 px-2 rounded-md bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/50 text-emerald-300 font-mono-tabular text-[11px] font-bold flex items-center justify-center gap-1 transition">
+              <span>● ONLINE</span>
+            </button>
+          </div>
+
+          <!-- Commercial Feed B -->
+          <div id="breaker-card-b" class="bg-dcim-bg border border-amber-500/40 rounded-lg p-2.5 flex flex-col justify-between gap-2 transition-all">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-bold text-amber-400">COMMERCIAL B</span>
+              <span id="breaker-led-b" class="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]"></span>
+            </div>
+            <button onclick="toggleCommercialFeed('B')" id="btn-breaker-b" class="w-full py-1.5 px-2 rounded-md bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/50 text-emerald-300 font-mono-tabular text-[11px] font-bold flex items-center justify-center gap-1 transition">
+              <span>● ONLINE</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Quick Scenario Buttons -->
+        <div class="grid grid-cols-2 gap-2 text-[11px] font-mono-tabular">
+          <button onclick="setCommercialFeeds(false, false)" class="py-1.5 px-2 rounded-md bg-rose-950/60 hover:bg-rose-900/70 text-rose-200 border border-rose-700/60 font-semibold transition">
+            ⚡ Trip Both (Blackout)
+          </button>
+          <button onclick="setCommercialFeeds(true, true)" class="py-1.5 px-2 rounded-md bg-emerald-950/50 hover:bg-emerald-900/60 text-emerald-200 border border-emerald-700/60 font-semibold transition">
+            ✓ Restore Utility
+          </button>
+        </div>
+
+        <!-- Simulation Speed & Recharge Controls -->
+        <div class="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
+          <div class="flex items-center gap-1.5">
+            <span class="text-[10px] font-semibold uppercase text-slate-400">Sim Speed:</span>
+            <select id="sim-speed-select" onchange="setSimSpeed(parseInt(this.value, 10))" class="bg-dcim-bg border border-dcim-border rounded-md px-2 py-1 text-[11px] font-mono-tabular font-semibold text-cyan-300 focus:outline-none focus:border-cyan-500">
+              <option value="1" selected>1x Real-time</option>
+              <option value="10">10x Speed</option>
+              <option value="60">60x (1m / sec)</option>
+              <option value="300">300x (5m / sec)</option>
+            </select>
+          </div>
+          <button onclick="rechargeAllUps()" class="px-2.5 py-1 rounded-md bg-cyan-600/20 hover:bg-cyan-600/35 text-cyan-300 border border-cyan-500/40 text-[11px] font-mono-tabular font-semibold transition" title="Instantly recharge all rack UPS batteries to 100%">
+            🔋 Recharge 100%
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. LIVE POWER TOPOLOGY PATH VISUALIZER -->
+      <div class="bg-dcim-card border border-dcim-border rounded-xl p-3 space-y-2 shadow-lg">
+        <div class="flex items-center justify-between">
+          <h3 class="text-[11px] font-bold uppercase tracking-wider text-slate-300">Power Topology Path</h3>
+          <span class="text-[10px] font-mono-tabular text-slate-500">Utility → UPS → Rack Bus</span>
+        </div>
+        <div id="power-topology-visualizer" class="bg-dcim-bg border border-dcim-border rounded-lg p-2.5 text-[11px] font-mono-tabular space-y-2">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <!-- 3. UPS WIRING & LIVE BATTERY RUNTIME MONITOR -->
+      <div class="bg-dcim-card border border-dcim-border rounded-xl p-3.5 space-y-2.5 shadow-lg">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span>UPS Wiring & Battery Monitor</span>
+          </h3>
+          <span id="ups-count-badge" class="text-[10px] font-mono-tabular px-2 py-0.5 rounded bg-dcim-bg text-slate-400 border border-dcim-border">0 UPS</span>
+        </div>
+
+        <div id="ups-monitor-list" class="space-y-2.5">
+          <!-- Populated dynamically with UPS wiring controls, drain rate, and countdown timer -->
+        </div>
+      </div>
+
+      <!-- 4. RACK POWER & THERMAL (BTU/HR) TELEMETRY -->
+      <div class="bg-dcim-card border border-dcim-border rounded-xl p-3.5 space-y-3 shadow-lg">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300">Power & Thermal Telemetry</h3>
+          <span id="telemetry-circuit-label" class="text-[10px] font-mono-tabular text-cyan-300 bg-dcim-bg px-2 py-0.5 rounded border border-dcim-border">208V • 30A/Feed</span>
+        </div>
+
+        <!-- Primary KPIs: Watts/Amps & BTU/Tons -->
+        <div class="grid grid-cols-2 gap-2">
+          <div class="bg-dcim-bg border border-dcim-border rounded-lg p-2.5">
+            <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Active IT Load</div>
+            <div id="kpi-total-watts" class="text-base font-mono-tabular font-bold text-white mt-0.5">0 W</div>
+            <div id="kpi-total-amps" class="text-[11px] font-mono-tabular text-cyan-400">0.0 A @ 208V</div>
+          </div>
+
+          <div class="bg-dcim-bg border border-dcim-border rounded-lg p-2.5">
+            <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Thermal Output</div>
+            <div id="kpi-total-btu" class="text-base font-mono-tabular font-bold text-amber-300 mt-0.5">0 BTU/h</div>
+            <div id="kpi-total-tons" class="text-[11px] font-mono-tabular text-slate-400">0.00 Tons Cooling</div>
+          </div>
+        </div>
+
+        <!-- PDU-A Load Bar -->
+        <div id="meter-box-a" class="bg-dcim-bg border border-dcim-border rounded-lg p-2.5 space-y-1.5 transition-all">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+              PDU-A Load
+            </span>
+            <span class="font-mono-tabular text-xs font-bold text-white">
+              <span id="telemetry-a-watts">0 W</span> <span class="text-slate-500">/</span> <span id="telemetry-a-amps" class="text-cyan-300">0.0 A</span>
+            </span>
+          </div>
+          <div class="relative h-2.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+            <div id="bar-feed-a" class="h-full bg-gradient-to-r from-cyan-600 to-cyan-400 transition-all duration-200" style="width: 0%"></div>
+            <!-- 80% NEC Continuous Load Threshold Tick -->
+            <div class="absolute top-0 bottom-0 left-[80%] w-0.5 bg-amber-400 z-10" title="80% NEC Continuous Load Limit"></div>
+          </div>
+          <div class="flex items-center justify-between text-[10px] font-mono-tabular text-slate-400">
+            <span id="telemetry-a-sub">0W / 6,240W max</span>
+            <span id="telemetry-a-pct" class="font-bold text-cyan-300">0.0%</span>
+          </div>
+        </div>
+
+        <!-- PDU-B Load Bar -->
+        <div id="meter-box-b" class="bg-dcim-bg border border-dcim-border rounded-lg p-2.5 space-y-1.5 transition-all">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+              PDU-B Load
+            </span>
+            <span class="font-mono-tabular text-xs font-bold text-white">
+              <span id="telemetry-b-watts">0 W</span> <span class="text-slate-500">/</span> <span id="telemetry-b-amps" class="text-amber-300">0.0 A</span>
+            </span>
+          </div>
+          <div class="relative h-2.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+            <div id="bar-feed-b" class="h-full bg-gradient-to-r from-amber-600 to-amber-400 transition-all duration-200" style="width: 0%"></div>
+            <!-- 80% NEC Continuous Load Threshold Tick -->
+            <div class="absolute top-0 bottom-0 left-[80%] w-0.5 bg-rose-400 z-10" title="80% NEC Continuous Load Limit"></div>
+          </div>
+          <div class="flex items-center justify-between text-[10px] font-mono-tabular text-slate-400">
+            <span id="telemetry-b-sub">0W / 6,240W max</span>
+            <span id="telemetry-b-pct" class="font-bold text-amber-300">0.0%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. POWER & OUTAGE EVENT LOG -->
+      <div class="bg-dcim-card border border-dcim-border rounded-xl p-3 flex flex-col min-h-[145px]">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-[11px] font-bold uppercase tracking-wider text-slate-300">Power & Outage Event Log</h3>
+          <button onclick="clearEventLog()" class="text-[10px] font-mono-tabular text-slate-400 hover:text-white">Clear</button>
+        </div>
+        <div id="event-log-list" class="flex-1 max-h-40 overflow-y-auto space-y-1 font-mono-tabular text-[10px] pr-1">
+          <!-- Timestamped events populated dynamically -->
+        </div>
+      </div>
+
+    </aside>
+  </main>
+
+  <!-- =====================================================================
+       MODAL 1: DEVICE & UPS INSPECTOR / WIRING CONFIGURATION
+  ====================================================================== -->
+  <div id="inspector-modal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-dcim-panel border border-slate-600 rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-dcim-border pb-3">
+        <div>
+          <span id="insp-badge-type" class="text-[10px] font-mono-tabular uppercase tracking-wider text-cyan-400">Hardware Configuration</span>
+          <h3 id="insp-model-title" class="text-base font-bold text-white">Device Inspector</h3>
+        </div>
+        <button onclick="closeInspector()" class="w-8 h-8 rounded-lg bg-dcim-card hover:bg-slate-700 text-slate-300 flex items-center justify-center">✕</button>
+      </div>
+
+      <form onsubmit="saveInspectorChanges(event)" class="space-y-3">
+        <input type="hidden" id="insp-device-id" />
+
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Hostname / Asset Label</label>
+          <input type="text" id="insp-label" required class="w-full bg-dcim-bg border border-dcim-border rounded-lg px-3 py-2 text-sm text-white font-mono-tabular focus:outline-none focus:border-cyan-500" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Bottom Rack Unit (RU)</label>
+            <select id="insp-start-u" class="w-full bg-dcim-bg border border-dcim-border rounded-lg px-3 py-2 text-sm text-white font-mono-tabular focus:outline-none focus:border-cyan-500"></select>
+          </div>
+          <div id="insp-it-watts-group">
+            <label class="block text-xs text-slate-400 mb-1">Power Draw (Watts)</label>
+            <input type="number" id="insp-watts" min="0" max="25000" step="5" oninput="updateInspectorPreview()" class="w-full bg-dcim-bg border border-dcim-border rounded-lg px-3 py-2 text-sm text-white font-mono-tabular focus:outline-none focus:border-cyan-500" />
+          </div>
+        </div>
+
+        <!-- IT Device Power Supply Assignment -->
+        <div id="insp-it-feed-group">
+          <label class="block text-xs text-slate-400 mb-1">IT Device Power Cord Assignment</label>
+          <select id="insp-feed-mode" class="w-full bg-dcim-bg border border-dcim-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+            <option value="AB">Dual PSU (PDU-A + PDU-B — 50%/50% Redundant)</option>
+            <option value="A">Single PSU — PDU-A Only</option>
+            <option value="B">Single PSU — PDU-B Only</option>
+          </select>
+        </div>
+
+        <!-- UPS Input / Output Wiring & Battery Configuration -->
+        <div id="insp-ups-wiring-group" class="hidden space-y-3 bg-slate-900/90 border border-emerald-500/40 rounded-xl p-3">
+          <div class="text-xs font-bold text-emerald-300 uppercase tracking-wider flex items-center justify-between">
+            <span>⚡ UPS Electrical Wiring</span>
+            <span id="insp-ups-runtime-badge" class="font-mono-tabular text-[11px] text-white bg-emerald-950 px-2 py-0.5 rounded border border-emerald-500/40">Est: --</span>
+          </div>
+
+          <div>
+            <label class="block text-xs text-slate-300 mb-1">1. UPS Input (Upstream Commercial Power)</label>
+            <select id="insp-ups-input" class="w-full bg-dcim-bg border border-dcim-border rounded-lg px-3 py-2 text-sm text-cyan-300 font-semibold focus:outline-none focus:border-cyan-500">
+              <option value="A">Commercial Feed A (Utility Bus A)</option>
+              <option value="B">Commercial Feed B (Utility Bus B)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs text-slate-300 mb-1">2. UPS Output (Protected Rack Power Feeds)</label>
+            <select id="insp-ups-output" class="w-full bg-dcim-bg border border-dcim-border rounded-lg px-3 py-2 text-sm text-amber-300 font-semibold focus:outline-none focus:border-amber-500">
+              <option value="AB">Both Feeds (PDU-A + PDU-B)</option>
+              <option value="A">Feed A Only (PDU-A)</option>
+              <option value="B">Feed B Only (PDU-B)</option>
+            </select>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 text-[11px] font-mono-tabular text-slate-300 pt-1">
+            <div class="bg-dcim-bg p-2 rounded border border-dcim-border">
+              Rated Output: <strong id="insp-ups-rated" class="text-white">2700W</strong>
+            </div>
+            <div class="bg-dcim-bg p-2 rounded border border-dcim-border">
+              Battery Bank: <strong id="insp-ups-wh" class="text-emerald-300">1200Wh</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Thermal Preview for IT Devices -->
+        <div id="insp-btu-box" class="bg-dcim-bg border border-dcim-border rounded-lg p-2.5 flex items-center justify-between text-xs font-mono-tabular">
+          <span class="text-slate-400">Heat Dissipation:</span>
+          <span id="insp-btu-preview" class="text-amber-300 font-bold">0 BTU/hr</span>
+        </div>
+
+        <div class="flex items-center justify-between pt-2 gap-2">
+          <button type="button" onclick="deleteInspectedDevice()" class="px-3.5 py-2 rounded-lg bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800 text-xs font-semibold transition">
+            Remove
+          </button>
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="closeInspector()" class="px-3.5 py-2 rounded-lg bg-dcim-card hover:bg-slate-700 text-slate-300 text-xs font-medium">Done</button>
+            <button type="submit" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow-md">Save Wiring & Config</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       MODAL 2: + CUSTOM DEVICE / UPS BUILDER MODAL
+  ====================================================================== -->
+  <div id="custom-modal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-dcim-panel border border-slate-600 rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-dcim-border pb-3">
+        <div>
+          <span class="text-[10px] font-mono-tabular uppercase tracking-wider text-cyan-400">Hardware Catalog Builder</span>
+          <h3 class="text-base font-bold text-white">Create Custom Device or UPS</h3>
+        </div>
+        <button onclick="closeCustomModal()" class="w-8 h-8 rounded-lg bg-dcim-card hover:bg-slate-700 text-slate-300 flex items-center justify-center">✕</button>
+      </div>
+
+      <form onsubmit="handleCreateCustomHardware(event)" class="space-y-3">
+        <!-- Equipment Class Toggle -->
+        <div class="grid grid-cols-2 gap-2 bg-dcim-bg p-1 rounded-lg border border-dcim-border text-xs">
+          <button type="button" id="cust-type-it" onclick="setCustomType('IT')" class="py-1.5 rounded-md bg-cyan-600 text-white font-semibold transition">IT Equipment</button>
+          <button type="button" id="cust-type-ups" onclick="setCustomType('UPS')" class="py-1.5 rounded-md text-slate-400 hover:text-white font-semibold transition">Battery UPS Unit</button>
+        </div>
+
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Model / Hardware Name</label>
+          <input type="text" id="cust-name" required placeholder="e.g., Dell PowerEdge R760 or APC SRT5K" class="w-full bg-dcim-bg border border-dcim-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Height (RU)</label>
+            <select id="cust-u" class="w-full bg-dcim-bg border border-dcim-border rounded-lg px-3 py-2 text-sm text-white font-mono-tabular focus:outline-none focus:border-cyan-500">
+              <option value="1">1U</option>
+              <option value="2" selected>2U</option>
+              <option value="3">3U</option>
+              <option value="4">4U</option>
+              <option value="6">6U</option>
+              <option value="8">8U</option>
+            </select>
+          </div>
+          <div id="cust-it-watts-col">
+            <label class="block text-xs text-slate-400 mb-1">Power Draw (Watts)</label>
+            <input type="number" id="cust-watts" min="0" max="20000" step="10" value="650" class="w-full bg-dcim-bg border border-dcim-border rounded-lg px-3 py-2 text-sm text-white font-mono-tabular focus:outline-none focus:border-cyan-500" />
+          </div>
+          <div id="cust-ups-rated-col" class="hidden">
+            <label class="block text-xs text-slate-400 mb-1">Rated Output (Watts)</label>
+            <input type="number" id="cust-ups-rated" min="100" max="30000" step="50" value="3000" class="w-full bg-dcim-bg border border-dcim-border rounded-lg px-3 py-2 text-sm text-white font-mono-tabular focus:outline-none focus:border-cyan-500" />
+          </div>
+        </div>
+
+        <!-- IT-specific fields -->
+        <div id="cust-it-fields" class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Power Supply Wiring</label>
+            <select id="cust-feed" class="w-full bg-dcim-bg border border-dcim-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+              <option value="AB" selected>Dual PSU (A+B)</option>
+              <option value="A">Single PSU (A Only)</option>
+              <option value="B">Single PSU (B Only)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Chassis Appearance</label>
+            <select id="cust-style" class="w-full bg-dcim-bg border border-dcim-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+              <option value="server-2u">Enterprise Server</option>
+              <option value="gpu-4u">GPU / AI Node</option>
+              <option value="switch-48">48-Port Switch</option>
+              <option value="switch-sfp">100GbE Fiber Switch</option>
+              <option value="storage-24">SAN Storage Array</option>
+              <option value="patch">Patch Panel</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- UPS-specific fields -->
+        <div id="cust-ups-fields" class="hidden space-y-3">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Battery Energy Capacity (Wh)</label>
+            <input type="number" id="cust-ups-wh" min="100" max="50000" step="50" value="1600" class="w-full bg-dcim-bg border border-dcim-border rounded-lg px-3 py-2 text-sm text-emerald-300 font-mono-tabular focus:outline-none focus:border-emerald-500" />
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Default Input</label>
+              <select id="cust-ups-in" class="w-full bg-dcim-bg border border-dcim-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500">
+                <option value="A">Commercial A</option>
+                <option value="B">Commercial B</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Default Output</label>
+              <select id="cust-ups-out" class="w-full bg-dcim-bg border border-dcim-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500">
+                <option value="AB">Both (A + B)</option>
+                <option value="A">Feed A Only</option>
+                <option value="B">Feed B Only</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="closeCustomModal()" class="px-3.5 py-2 rounded-lg bg-dcim-card hover:bg-slate-700 text-slate-300 text-xs font-medium">Cancel</button>
+          <button type="submit" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow-md">Add to Catalog & Rack</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       MODAL 3: EXPORT / IMPORT JSON
+  ====================================================================== -->
+  <div id="json-modal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-dcim-panel border border-slate-600 rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-3.5">
+      <div class="flex items-center justify-between border-b border-dcim-border pb-3">
+        <h3 class="text-base font-bold text-white">RackEnv Pro Configuration JSON</h3>
+        <button onclick="closeJsonModal()" class="w-8 h-8 rounded-lg bg-dcim-card hover:bg-slate-700 text-slate-300 flex items-center justify-center">✕</button>
+      </div>
+      <p class="text-xs text-slate-400">Export your rack elevation and UPS input/output wiring to JSON, or paste a configuration below to restore.</p>
+      <textarea id="json-textarea" rows="10" class="w-full bg-dcim-bg border border-dcim-border rounded-lg p-3 font-mono-tabular text-xs text-cyan-200 focus:outline-none focus:border-cyan-500"></textarea>
+      <div class="flex items-center justify-between gap-2">
+        <button onclick="copyRackJson()" class="px-3.5 py-2 rounded-lg bg-dcim-card hover:bg-slate-700 text-slate-200 border border-dcim-border text-xs font-semibold">Copy JSON</button>
+        <div class="flex items-center gap-2">
+          <button onclick="closeJsonModal()" class="px-3.5 py-2 rounded-lg bg-dcim-card hover:bg-slate-700 text-slate-300 text-xs">Close</button>
+          <button onclick="importRackJson()" class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold">Import JSON</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       MODAL 4: CLEAR RACK CONFIRMATION
+  ====================================================================== -->
+  <div id="clear-modal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-dcim-panel border border-slate-600 rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4">
+      <h3 class="text-base font-bold text-white">Clear All Equipment?</h3>
+      <p class="text-xs text-slate-300 leading-relaxed">Remove all installed servers, switches, storage, and UPS units from <span class="font-mono-tabular text-cyan-300" id="clear-rack-name">the rack</span>?</p>
+      <div class="flex justify-end gap-2">
+        <button onclick="closeClearModal()" class="px-3.5 py-2 rounded-lg bg-dcim-card hover:bg-slate-700 text-slate-300 text-xs font-medium">Cancel</button>
+        <button onclick="executeClearRack()" class="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold">Clear Rack</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Banner -->
+  <div id="toast-banner" class="fixed bottom-4 right-4 z-50 pointer-events-none opacity-0 translate-y-2 transition-all duration-200 bg-slate-900 border border-cyan-500/50 text-slate-100 px-4 py-2.5 rounded-xl shadow-2xl text-xs font-medium flex items-center gap-2">
+    <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+    <span id="toast-message">Notification</span>
+  </div>
+
+  <!-- =====================================================================
+       APPLICATION JAVASCRIPT SIMULATION ENGINE
+  ====================================================================== -->
+  <script>
+    /**
+     * Engineering Constants
+     */
+    const WATTS_TO_BTU = 3.41214;
+    const BTU_PER_TON = 12000;
+    const RU_HEIGHT_PX = 25;
+    const INVERTER_EFFICIENCY = 0.92;
+    const INVERTER_TARE_WATTS = 20;
+
+    /**
+     * Built-in Hardware & UPS Catalog
+     */
+    const DEFAULT_CATALOG = [
+      // Power & UPS Units
+      {
+        id: 'ups-1u-1500',
+        category: 'Power & UPS',
+        isUps: true,
+        name: '1U Lithium UPS 1500VA',
+        uHeight: 1,
+        ratedWatts: 1350,
+        batteryCapacityWh: 750,
+        defaultInput: 'A',
+        defaultOutput: 'A',
+        style: 'ups',
+        desc: '1350W Rated • 750Wh Li-Ion Bank • Configurable In/Out'
+      },
+      {
+        id: 'ups-2u-3000',
+        category: 'Power & UPS',
+        isUps: true,
+        name: '2U Smart-UPS 3000VA',
+        uHeight: 2,
+        ratedWatts: 2700,
+        batteryCapacityWh: 1200,
+        defaultInput: 'A',
+        defaultOutput: 'AB',
+        style: 'ups',
+        desc: '2700W Rated • 1200Wh Battery • Dual-Bus Capable'
+      },
+      {
+        id: 'ups-4u-6000',
+        category: 'Power & UPS',
+        isUps: true,
+        name: '4U Online UPS 6000VA',
+        uHeight: 4,
+        ratedWatts: 5400,
+        batteryCapacityWh: 3200,
+        defaultInput: 'B',
+        defaultOutput: 'AB',
+        style: 'ups',
+        desc: '5400W Double-Conversion • 3200Wh Extended Runtime'
+      },
+
+      // Compute Servers
+      {
+        id: 'srv-1u-compute',
+        category: 'Compute Servers',
+        isUps: false,
+        name: '1U Dual-Xeon Compute Node',
+        uHeight: 1,
+        watts: 380,
+        feedMode: 'AB',
+        style: 'server-1u',
+        desc: '10x NVMe Bays • Redundant Dual PSU (A+B)'
+      },
+      {
+        id: 'srv-2u-virt',
+        category: 'Compute Servers',
+        isUps: false,
+        name: '2U Enterprise Hypervisor Host',
+        uHeight: 2,
+        watts: 620,
+        feedMode: 'AB',
+        style: 'server-2u',
+        desc: '12x 3.5" SAS/NVMe • LCD Bezel • Dual PSU (A+B)'
+      },
+      {
+        id: 'srv-4u-gpu',
+        category: 'Compute Servers',
+        isUps: false,
+        name: '4U 8x GPU AI Compute Node',
+        uHeight: 4,
+        watts: 2450,
+        feedMode: 'AB',
+        style: 'gpu-4u',
+        desc: 'High-Density GPU Accelerator • 3000W N+1 PSUs'
+      },
+      {
+        id: 'srv-1u-legacy',
+        category: 'Compute Servers',
+        isUps: false,
+        name: '1U Legacy Edge Appliance',
+        uHeight: 1,
+        watts: 210,
+        feedMode: 'B',
+        style: 'server-1u',
+        desc: 'Single-Corded Appliance (PDU-B Only)'
+      },
+
+      // Networking
+      {
+        id: 'net-1u-48poe',
+        category: 'Networking',
+        isUps: false,
+        name: '1U 48-Port GbE PoE+ Switch',
+        uHeight: 1,
+        watts: 260,
+        feedMode: 'AB',
+        style: 'switch-48',
+        desc: '48x RJ45 + 4x 10G SFP+ • Dual PSU (A+B)'
+      },
+      {
+        id: 'net-1u-spine',
+        category: 'Networking',
+        isUps: false,
+        name: '1U 32-Port 100GbE Spine Switch',
+        uHeight: 1,
+        watts: 340,
+        feedMode: 'AB',
+        style: 'switch-sfp',
+        desc: '32x QSFP28 Low-Latency TOR • Dual PSU (A+B)'
+      },
+      {
+        id: 'net-1u-oob',
+        category: 'Networking',
+        isUps: false,
+        name: '1U Out-of-Band Console Server',
+        uHeight: 1,
+        watts: 55,
+        feedMode: 'A',
+        style: 'switch-48',
+        desc: '32-Port Serial Management (PDU-A Only)'
+      },
+
+      // Storage & Patch
+      {
+        id: 'sto-2u-nvme',
+        category: 'Storage & Patch',
+        isUps: false,
+        name: '2U All-Flash NVMe SAN Array',
+        uHeight: 2,
+        watts: 540,
+        feedMode: 'AB',
+        style: 'storage-24',
+        desc: '24x U.3 NVMe SSDs • Dual Active Controllers'
+      },
+      {
+        id: 'sto-4u-san',
+        category: 'Storage & Patch',
+        isUps: false,
+        name: '4U 24-Bay Enterprise SAN',
+        uHeight: 4,
+        watts: 980,
+        feedMode: 'AB',
+        style: 'storage-24',
+        desc: '24x 3.5" High-Capacity Enclosure • Dual PSU'
+      },
+      {
+        id: 'pat-1u-48',
+        category: 'Storage & Patch',
+        isUps: false,
+        name: '1U 48-Port Cat6A Patch Panel',
+        uHeight: 1,
+        watts: 0,
+        feedMode: 'AB',
+        style: 'patch',
+        desc: 'Passive Copper Termination (0W)'
+      }
+    ];
+
+    /**
+     * Application State
+     */
+    let state = {
+      rackName: 'CAB-A04 // CORE-PROD-01',
+      rackHeight: 42,
+      voltage: 208,         // 120V or 208V
+      feedAOnline: true,    // Upstream Commercial Feed A
+      feedBOnline: true,    // Upstream Commercial Feed B
+      simSpeed: 1,          // 1, 10, 60, 300
+      showOverlay: true,
+      activeCategory: 'All',
+      catalog: [...DEFAULT_CATALOG],
+      installedDevices: [],
+      dragContext: null,
+      activeMobileTab: 'rack',
+      eventLog: [],
+      previousUpsModes: {}, // Tracks transitions for event logging
+      previousPduStates: { A: true, B: true }
+    };
+
+    let customModalType = 'IT';
+    let simTimerId = null;
+    let lastTickTimestamp = performance.now();
+
+    /**
+     * Initialize App on DOMContentLoaded
+     */
+    window.addEventListener('DOMContentLoaded', () => {
+      loadDemoRack(true);
+      setupRackDragAndDrop();
+      setupTouchDragSupport();
+      updateResponsiveLayout();
+      window.addEventListener('resize', updateResponsiveLayout);
+
+      // Start 250ms real-time UPS battery drain & telemetry tick loop
+      lastTickTimestamp = performance.now();
+      simTimerId = setInterval(simulationTick, 250);
+    });
+
+    /**
+     * Responsive Mobile Drawer Toggle
+     */
+    function setMobileTab(tab) {
+      state.activeMobileTab = tab;
+      updateResponsiveLayout();
+    }
+
+    function updateResponsiveLayout() {
+      const isDesktop = window.innerWidth >= 1024;
+      const lib = document.getElementById('panel-library');
+      const rack = document.getElementById('panel-rack');
+      const pwr = document.getElementById('panel-power');
+
+      if (isDesktop) {
+        lib.classList.remove('hidden');
+        rack.classList.remove('hidden');
+        pwr.classList.remove('hidden');
+        return;
+      }
+
+      lib.classList.toggle('hidden', state.activeMobileTab !== 'library');
+      rack.classList.toggle('hidden', state.activeMobileTab !== 'rack');
+      pwr.classList.toggle('hidden', state.activeMobileTab !== 'power');
+
+      ['library', 'rack', 'power'].forEach(t => {
+        const btn = document.getElementById(`mob-tab-${t}`);
+        btn.className = t === state.activeMobileTab
+          ? 'px-2.5 py-1.5 rounded-md font-medium bg-cyan-600 text-white transition'
+          : 'px-2.5 py-1.5 rounded-md font-medium text-slate-300 transition';
+      });
+    }
+
+    /**
+     * Load Sample Enterprise Rack with 2U Smart-UPS 3000VA (Comm A -> Both A+B)
+     */
+    function loadDemoRack(silent = false) {
+      state.rackName = 'CAB-A04 // CORE-PROD-01';
+      state.rackHeight = 42;
+      state.voltage = 208;
+      state.feedAOnline = true;
+      state.feedBOnline = true;
+      state.previousUpsModes = {};
+      state.previousPduStates = { A: true, B: true };
+
+      document.getElementById('rack-name-input').value = state.rackName;
+      document.getElementById('rack-height-select').value = '42';
+      updateVoltageButtons();
+
+      state.installedDevices = [
+        {
+          instanceId: 'demo-pp-1',
+          templateId: 'pat-1u-48',
+          isUps: false,
+          name: '1U 48-Port Cat6A Patch Panel',
+          label: 'PP-TOP-A04',
+          uHeight: 1,
+          startU: 42,
+          watts: 0,
+          feedMode: 'AB',
+          style: 'patch'
+        },
+        {
+          instanceId: 'demo-sw-1',
+          templateId: 'net-1u-spine',
+          isUps: false,
+          name: '1U 32-Port 100GbE Spine Switch',
+          label: 'TOR-SW-01.DC1',
+          uHeight: 1,
+          startU: 41,
+          watts: 340,
+          feedMode: 'AB',
+          style: 'switch-sfp'
+        },
+        {
+          instanceId: 'demo-sw-2',
+          templateId: 'net-1u-spine',
+          isUps: false,
+          name: '1U 32-Port 100GbE Spine Switch',
+          label: 'TOR-SW-02.DC1',
+          uHeight: 1,
+          startU: 40,
+          watts: 340,
+          feedMode: 'AB',
+          style: 'switch-sfp'
+        },
+        {
+          instanceId: 'demo-sw-3',
+          templateId: 'net-1u-48poe',
+          isUps: false,
+          name: '1U 48-Port GbE PoE+ Switch',
+          label: 'MGMT-POE-01',
+          uHeight: 1,
+          startU: 39,
+          watts: 260,
+          feedMode: 'AB',
+          style: 'switch-48'
+        },
+        {
+          instanceId: 'demo-srv-1',
+          templateId: 'srv-2u-virt',
+          isUps: false,
+          name: '2U Enterprise Hypervisor Host',
+          label: 'ESXI-PROD-01',
+          uHeight: 2,
+          startU: 34,
+          watts: 620,
+          feedMode: 'AB',
+          style: 'server-2u'
+        },
+        {
+          instanceId: 'demo-srv-2',
+          templateId: 'srv-2u-virt',
+          isUps: false,
+          name: '2U Enterprise Hypervisor Host',
+          label: 'ESXI-PROD-02',
+          uHeight: 2,
+          startU: 32,
+          watts: 620,
+          feedMode: 'AB',
+          style: 'server-2u'
+        },
+        {
+          instanceId: 'demo-san-1',
+          templateId: 'sto-2u-nvme',
+          isUps: false,
+          name: '2U All-Flash NVMe SAN Array',
+          label: 'NVME-SAN-01',
+          uHeight: 2,
+          startU: 26,
+          watts: 540,
+          feedMode: 'AB',
+          style: 'storage-24'
+        },
+        {
+          instanceId: 'demo-ups-1',
+          templateId: 'ups-2u-3000',
+          isUps: true,
+          name: '2U Smart-UPS 3000VA',
+          label: 'UPS-PRIMARY-01',
+          uHeight: 2,
+          startU: 2,
+          ratedWatts: 2700,
+          batteryCapacityWh: 1200,
+          chargePct: 100,
+          upsInput: 'A',     // Wired to Commercial Feed A
+          upsOutput: 'AB',   // Protecting Both Rack PDU-A & PDU-B
+          style: 'ups'
+        }
+      ];
+
+      state.eventLog = [];
+      appendEventLog('System initialized: Demo rack loaded with 2U Smart-UPS 3000VA (IN: Comm A → OUT: A+B).', 'info');
+
+      renderCatalog();
+      renderRackStructure();
+      renderAllTelemetry();
+      if (!silent) showToast('Demo rack loaded');
+    }
+
+    /**
+     * =====================================================================
+     * 1. HARDWARE CATALOG & CUSTOM DEVICE / UPS CREATOR
+     * =====================================================================
+     */
+    function setCatalogCategory(cat) {
+      state.activeCategory = cat;
+      document.querySelectorAll('.cat-pill').forEach(btn => {
+        btn.className = btn.dataset.cat === cat
+          ? 'cat-pill px-2 py-1 rounded text-[11px] font-medium bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+          : 'cat-pill px-2 py-1 rounded text-[11px] font-medium bg-dcim-card text-slate-400 border border-dcim-border hover:text-slate-200';
+      });
+      renderCatalog();
+    }
+
+    function renderCatalog() {
+      const listEl = document.getElementById('catalog-list');
+      const query = (document.getElementById('catalog-search').value || '').toLowerCase().trim();
+
+      const filtered = state.catalog.filter(item => {
+        const matchesCat = state.activeCategory === 'All' || item.category === state.activeCategory;
+        const matchesText = !query ||
+          item.name.toLowerCase().includes(query) ||
+          item.desc.toLowerCase().includes(query) ||
+          `${item.uHeight}u`.includes(query);
+        return matchesCat && matchesText;
+      });
+
+      if (filtered.length === 0) {
+        listEl.innerHTML = `<div class="text-center py-8 text-xs text-slate-500">No matching hardware found.</div>`;
+        return;
+      }
+
+      listEl.innerHTML = filtered.map(item => {
+        if (item.isUps) {
+          return `
+            <div
+              draggable="true"
+              ondragstart="handleCatalogDragStart(event, '${item.id}')"
+              ondragend="handleDragEnd()"
+              data-catalog-id="${item.id}"
+              class="catalog-item group bg-gradient-to-br from-emerald-950/35 to-dcim-card hover:from-emerald-950/55 border border-emerald-500/35 hover:border-emerald-400 rounded-xl p-2.5 cursor-grab active:cursor-grabbing transition shadow-sm select-none"
+            >
+              <div class="flex items-start justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="shrink-0 px-2 py-1 rounded-md bg-emerald-950 border border-emerald-500/50 font-mono-tabular text-xs font-bold text-emerald-300">
+                    ${item.uHeight}U
+                  </span>
+                  <div class="min-w-0">
+                    <div class="text-xs font-semibold text-emerald-200 truncate">${escapeHtml(item.name)}</div>
+                    <div class="text-[10px] text-slate-400 truncate">${escapeHtml(item.desc)}</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onclick="quickInsertDevice('${item.id}')"
+                  class="shrink-0 px-2 py-1 rounded-md bg-emerald-600/25 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 text-[11px] font-semibold transition"
+                >
+                  + Add
+                </button>
+              </div>
+              <div class="mt-2 pt-2 border-t border-emerald-900/50 flex items-center justify-between text-[11px] font-mono-tabular">
+                <span class="text-emerald-300 font-semibold">${item.ratedWatts}W Max • ${item.batteryCapacityWh}Wh</span>
+                <span class="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px]">UPS</span>
+              </div>
+            </div>
+          `;
+        }
+
+        const btu = Math.round(item.watts * WATTS_TO_BTU);
+        const feedBadge = item.feedMode === 'AB'
+          ? `<span class="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 text-[10px] font-mono-tabular font-semibold">PSU A+B</span>`
+          : item.feedMode === 'A'
+            ? `<span class="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 text-[10px] font-mono-tabular font-semibold">PSU A</span>`
+            : `<span class="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-mono-tabular font-semibold">PSU B</span>`;
+
+        return `
+          <div
+            draggable="true"
+            ondragstart="handleCatalogDragStart(event, '${item.id}')"
+            ondragend="handleDragEnd()"
+            data-catalog-id="${item.id}"
+            class="catalog-item group bg-dcim-card hover:bg-dcim-hover border border-dcim-border hover:border-cyan-500/50 rounded-xl p-2.5 cursor-grab active:cursor-grabbing transition shadow-sm select-none"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="shrink-0 px-2 py-1 rounded-md bg-slate-950 border border-slate-700 font-mono-tabular text-xs font-bold text-cyan-300">
+                  ${item.uHeight}U
+                </span>
+                <div class="min-w-0">
+                  <div class="text-xs font-semibold text-slate-100 truncate group-hover:text-cyan-200 transition">${escapeHtml(item.name)}</div>
+                  <div class="text-[10px] text-slate-400 truncate">${escapeHtml(item.desc)}</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onclick="quickInsertDevice('${item.id}')"
+                class="shrink-0 px-2 py-1 rounded-md bg-cyan-600/20 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/40 text-[11px] font-semibold transition"
+              >
+                + Add
+              </button>
+            </div>
+
+            <div class="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono-tabular">
+              <div class="flex items-center gap-2">
+                <span class="text-slate-200 font-semibold">${item.watts}W</span>
+                <span class="text-slate-600">•</span>
+                <span class="text-amber-300/90">${btu.toLocaleString()} BTU/h</span>
+              </div>
+              ${feedBadge}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    /**
+     * Custom Hardware / UPS Modal Controls
+     */
+    function openCustomModal() {
+      setCustomType('IT');
+      document.getElementById('custom-modal').classList.remove('hidden');
+    }
+
+    function closeCustomModal() {
+      document.getElementById('custom-modal').classList.add('hidden');
+    }
+
+    function setCustomType(type) {
+      customModalType = type;
+      const btnIt = document.getElementById('cust-type-it');
+      const btnUps = document.getElementById('cust-type-ups');
+
+      if (type === 'IT') {
+        btnIt.className = 'py-1.5 rounded-md bg-cyan-600 text-white font-semibold transition';
+        btnUps.className = 'py-1.5 rounded-md text-slate-400 hover:text-white font-semibold transition';
+        document.getElementById('cust-it-watts-col').classList.remove('hidden');
+        document.getElementById('cust-it-fields').classList.remove('hidden');
+        document.getElementById('cust-ups-rated-col').classList.add('hidden');
+        document.getElementById('cust-ups-fields').classList.add('hidden');
+      } else {
+        btnUps.className = 'py-1.5 rounded-md bg-emerald-600 text-white font-semibold transition';
+        btnIt.className = 'py-1.5 rounded-md text-slate-400 hover:text-white font-semibold transition';
+        document.getElementById('cust-it-watts-col').classList.add('hidden');
+        document.getElementById('cust-it-fields').classList.add('hidden');
+        document.getElementById('cust-ups-rated-col').classList.remove('hidden');
+        document.getElementById('cust-ups-fields').classList.remove('hidden');
+      }
+    }
+
+    function handleCreateCustomHardware(e) {
+      e.preventDefault();
+      const name = document.getElementById('cust-name').value.trim();
+      const uHeight = parseInt(document.getElementById('cust-u').value, 10);
+      if (!name) return;
+
+      let template;
+      if (customModalType === 'UPS') {
+        const ratedWatts = Math.max(100, parseFloat(document.getElementById('cust-ups-rated').value) || 3000);
+        const batteryCapacityWh = Math.max(100, parseFloat(document.getElementById('cust-ups-wh').value) || 1600);
+        const defaultInput = document.getElementById('cust-ups-in').value;
+        const defaultOutput = document.getElementById('cust-ups-out').value;
+        template = {
+          id: 'custom-ups-' + Date.now(),
+          category: 'Power & UPS',
+          isUps: true,
+          name,
+          uHeight,
+          ratedWatts,
+          batteryCapacityWh,
+          defaultInput,
+          defaultOutput,
+          style: 'ups',
+          desc: `${ratedWatts}W Rated • ${batteryCapacityWh}Wh Custom UPS`
+        };
+      } else {
+        const watts = Math.max(0, parseFloat(document.getElementById('cust-watts').value) || 0);
+        const feedMode = document.getElementById('cust-feed').value;
+        const style = document.getElementById('cust-style').value;
+        template = {
+          id: 'custom-it-' + Date.now(),
+          category: 'Compute Servers',
+          isUps: false,
+          name,
+          uHeight,
+          watts,
+          feedMode,
+          style,
+          desc: `Custom ${uHeight}U Hardware (${watts}W)`
+        };
+      }
+
+      state.catalog.unshift(template);
+      renderCatalog();
+      closeCustomModal();
+      document.getElementById('cust-name').value = '';
+      quickInsertDevice(template.id);
+    }
+
+    /**
+     * Insert Device into Lowest Available RU Slot
+     */
+    function quickInsertDevice(templateId) {
+      const template = state.catalog.find(c => c.id === templateId);
+      if (!template) return;
+
+      for (let u = 1; u <= state.rackHeight - template.uHeight + 1; u++) {
+        if (isSlotRangeValid(u, template.uHeight, null)) {
+          const placed = placeNewDeviceFromTemplate(template, u);
+          if (window.innerWidth < 1024) setMobileTab('rack');
+          if (placed && placed.isUps) {
+            // Immediately open UPS wiring configuration modal when a UPS is placed
+            openInspector(placed.instanceId, true);
+          } else {
+            showToast(`Installed ${template.name} at U${u}`);
+          }
+          return;
+        }
+      }
+      showToast(`No contiguous ${template.uHeight}U space available in rack!`);
+    }
+
+    function placeNewDeviceFromTemplate(template, startU) {
+      const countOfType = state.installedDevices.filter(d => d.templateId === template.id).length + 1;
+      const instanceId = 'inst-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+
+      let newDevice;
+      if (template.isUps) {
+        newDevice = {
+          instanceId,
+          templateId: template.id,
+          isUps: true,
+          name: template.name,
+          label: `UPS-0${countOfType}`,
+          uHeight: template.uHeight,
+          startU,
+          ratedWatts: template.ratedWatts,
+          batteryCapacityWh: template.batteryCapacityWh,
+          chargePct: 100,
+          upsInput: template.defaultInput || 'A',
+          upsOutput: template.defaultOutput || 'AB',
+          style: 'ups'
+        };
+        appendEventLog(`Installed ${newDevice.label} (${newDevice.name}) at U${startU}. Configure Input/Output wiring.`, 'info');
+      } else {
+        const prefix = template.name.split(' ').slice(1, 3).join('-').toUpperCase().replace(/[^A-Z0-9-]/g, '') || 'NODE';
+        newDevice = {
+          instanceId,
+          templateId: template.id,
+          isUps: false,
+          name: template.name,
+          label: `${prefix}-0${countOfType}`,
+          uHeight: template.uHeight,
+          startU,
+          watts: template.watts,
+          feedMode: template.feedMode,
+          style: template.style
+        };
+      }
+
+      state.installedDevices.push(newDevice);
+      renderAllTelemetry();
+      return newDevice;
+    }
+
+    /**
+     * =====================================================================
+     * 2. RACK ELEVATION STRUCTURE & SNAP-TO-RU DRAG AND DROP
+     * =====================================================================
+     */
+    function updateRackName(newName) {
+      state.rackName = newName.trim() || 'UNNAMED-RACK';
+      document.getElementById('cabinet-header-title').textContent = state.rackName;
+    }
+
+    function changeRackHeight(newHeight) {
+      state.rackHeight = newHeight;
+      state.installedDevices = state.installedDevices.filter(d => (d.startU + d.uHeight - 1) <= newHeight);
+      document.getElementById('cabinet-ru-badge').textContent = `${newHeight}U EIA-310-D`;
+      renderRackStructure();
+      renderAllTelemetry();
+      showToast(`Rack height set to ${newHeight}U`);
+    }
+
+    function setSystemVoltage(volt) {
+      state.voltage = volt;
+      updateVoltageButtons();
+      renderAllTelemetry();
+      showToast(`System voltage switched to ${volt}V AC`);
+    }
+
+    function updateVoltageButtons() {
+      const b120 = document.getElementById('btn-volt-120');
+      const b208 = document.getElementById('btn-volt-208');
+      if (state.voltage === 120) {
+        b120.className = 'px-2 py-1 rounded-md bg-cyan-600 text-white font-bold transition';
+        b208.className = 'px-2 py-1 rounded-md text-slate-400 hover:text-white transition';
+        document.getElementById('cabinet-volt-badge').textContent = '120V 20A';
+      } else {
+        b208.className = 'px-2 py-1 rounded-md bg-cyan-600 text-white font-bold transition';
+        b120.className = 'px-2 py-1 rounded-md text-slate-400 hover:text-white transition';
+        document.getElementById('cabinet-volt-badge').textContent = '208V 30A';
+      }
+    }
+
+    function toggleTelemetryOverlay() {
+      state.showOverlay = !state.showOverlay;
+      const btn = document.getElementById('btn-toggle-overlay');
+      document.getElementById('overlay-status-text').textContent = state.showOverlay ? 'ON' : 'OFF';
+      btn.className = state.showOverlay
+        ? 'px-2.5 py-1.5 rounded-lg bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 text-xs font-medium transition'
+        : 'px-2.5 py-1.5 rounded-lg bg-dcim-card text-slate-400 border border-dcim-border text-xs font-medium transition';
+      renderAllTelemetry();
+    }
+
+    function renderRackStructure() {
+      const leftRail = document.getElementById('rack-rail-left');
+      const rightRail = document.getElementById('rack-rail-right');
+      const gridLines = document.getElementById('rack-grid-lines');
+      const dropZone = document.getElementById('rack-drop-zone');
+
+      dropZone.style.height = `${state.rackHeight * RU_HEIGHT_PX}px`;
+
+      let leftHtml = '';
+      let rightHtml = '';
+      let gridHtml = '';
+
+      for (let u = state.rackHeight; u >= 1; u--) {
+        const isMajor = u % 5 === 0 || u === 1 || u === state.rackHeight;
+        const numColor = isMajor ? 'text-cyan-300 font-bold' : 'text-slate-400 font-medium';
+
+        leftHtml += `
+          <div style="height: ${RU_HEIGHT_PX}px" class="border-b border-slate-800/90 flex items-center justify-between px-1">
+            <span class="font-mono-tabular text-[10px] ${numColor} w-4 text-right">${u}</span>
+            <div class="flex flex-col gap-[2px]">
+              <span class="cage-nut-hole"></span>
+              <span class="cage-nut-hole"></span>
+              <span class="cage-nut-hole"></span>
+            </div>
+          </div>
+        `;
+
+        rightHtml += `
+          <div style="height: ${RU_HEIGHT_PX}px" class="border-b border-slate-800/90 flex items-center justify-between px-1">
+            <div class="flex flex-col gap-[2px]">
+              <span class="cage-nut-hole"></span>
+              <span class="cage-nut-hole"></span>
+              <span class="cage-nut-hole"></span>
+            </div>
+            <span class="font-mono-tabular text-[10px] ${numColor} w-4 text-left">${u}</span>
+          </div>
+        `;
+
+        gridHtml += `
+          <div style="height: ${RU_HEIGHT_PX}px" class="border-b border-slate-800/50 flex items-center justify-center">
+            <span class="text-[9px] font-mono-tabular text-slate-800/80 select-none">U${u}</span>
+          </div>
+        `;
+      }
+
+      leftRail.innerHTML = leftHtml;
+      rightRail.innerHTML = rightHtml;
+      gridLines.innerHTML = gridHtml;
+    }
+
+    function isSlotRangeValid(startU, uHeight, ignoreInstanceId = null) {
+      const endU = startU + uHeight - 1;
+      if (startU < 1 || endU > state.rackHeight) return false;
+
+      for (const dev of state.installedDevices) {
+        if (ignoreInstanceId && dev.instanceId === ignoreInstanceId) continue;
+        const devEndU = dev.startU + dev.uHeight - 1;
+        if (!(endU < dev.startU || startU > devEndU)) return false;
+      }
+      return true;
+    }
+
+    /**
+     * Drag & Drop Handlers (Desktop + Touch)
+     */
+    function handleCatalogDragStart(e, templateId) {
+      const template = state.catalog.find(c => c.id === templateId);
+      if (!template) return;
+      state.dragContext = { source: 'catalog', item: template, grabOffsetU: 0 };
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'copy';
+        e.dataTransfer.setData('text/plain', templateId);
+      }
+    }
+
+    function handleInstalledDragStart(e, instanceId) {
+      const dev = state.installedDevices.find(d => d.instanceId === instanceId);
+      if (!dev) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const offsetFromBottomPx = rect.bottom - e.clientY;
+      const grabOffsetU = Math.max(0, Math.min(dev.uHeight - 1, Math.floor(offsetFromBottomPx / RU_HEIGHT_PX)));
+
+      state.dragContext = { source: 'rack', item: dev, instanceId: dev.instanceId, grabOffsetU };
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', instanceId);
+      }
+    }
+
+    function handleDragEnd() {
+      state.dragContext = null;
+      document.getElementById('rack-snap-ghost').classList.add('hidden');
+    }
+
+    function computeSnappedStartU(clientY) {
+      const dropZone = document.getElementById('rack-drop-zone');
+      const rect = dropZone.getBoundingClientRect();
+      const relYFromBottom = rect.height - (clientY - rect.top);
+      const hoveredU = Math.floor(relYFromBottom / RU_HEIGHT_PX) + 1;
+      const uHeight = state.dragContext ? state.dragContext.item.uHeight : 1;
+      const grabOffset = state.dragContext ? state.dragContext.grabOffsetU : 0;
+
+      let targetStartU = hoveredU - grabOffset;
+      return Math.max(1, Math.min(state.rackHeight - uHeight + 1, targetStartU));
+    }
+
+    function updateSnapGhost(targetStartU) {
+      if (!state.dragContext) return;
+      const ghost = document.getElementById('rack-snap-ghost');
+      const label = document.getElementById('rack-snap-label');
+      const uHeight = state.dragContext.item.uHeight;
+      const ignoreId = state.dragContext.source === 'rack' ? state.dragContext.instanceId : null;
+
+      const valid = isSlotRangeValid(targetStartU, uHeight, ignoreId);
+      const topPx = (state.rackHeight - (targetStartU + uHeight - 1)) * RU_HEIGHT_PX;
+      const heightPx = uHeight * RU_HEIGHT_PX;
+
+      ghost.style.top = `${topPx}px`;
+      ghost.style.height = `${heightPx}px`;
+      ghost.classList.remove('hidden');
+
+      const rangeText = uHeight > 1 ? `U${targetStartU}–U${targetStartU + uHeight - 1}` : `U${targetStartU}`;
+      if (valid) {
+        ghost.className = 'absolute left-1 right-1 z-30 rounded-md border-2 border-dashed border-emerald-400 bg-emerald-500/25 pointer-events-none flex items-center justify-center shadow-[0_0_15px_rgba(16,185,129,0.35)]';
+        label.className = 'px-2.5 py-0.5 rounded bg-emerald-950/95 border border-emerald-400/60 text-emerald-200 font-mono-tabular text-xs font-bold shadow';
+        label.textContent = `SNAP TO ${rangeText} (${uHeight}U)`;
+      } else {
+        ghost.className = 'absolute left-1 right-1 z-30 rounded-md border-2 border-dashed border-rose-500 bg-rose-500/30 pointer-events-none flex items-center justify-center shadow-[0_0_15px_rgba(239,68,68,0.4)]';
+        label.className = 'px-2.5 py-0.5 rounded bg-rose-950/95 border border-rose-500/60 text-rose-200 font-mono-tabular text-xs font-bold shadow';
+        label.textContent = `COLLISION AT ${rangeText}`;
+      }
+    }
+
+    function setupRackDragAndDrop() {
+      const dropZone = document.getElementById('rack-drop-zone');
+
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (!state.dragContext) return;
+        updateSnapGhost(computeSnappedStartU(e.clientY));
+      });
+
+      dropZone.addEventListener('dragleave', (e) => {
+        const rect = dropZone.getBoundingClientRect();
+        if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+          document.getElementById('rack-snap-ghost').classList.add('hidden');
+        }
+      });
+
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        if (!state.dragContext) return;
+
+        const targetStartU = computeSnappedStartU(e.clientY);
+        const uHeight = state.dragContext.item.uHeight;
+        const ignoreId = state.dragContext.source === 'rack' ? state.dragContext.instanceId : null;
+
+        if (!isSlotRangeValid(targetStartU, uHeight, ignoreId)) {
+          showToast('Cannot place here: RU slot occupied!');
+          handleDragEnd();
+          return;
+        }
+
+        if (state.dragContext.source === 'catalog') {
+          const placed = placeNewDeviceFromTemplate(state.dragContext.item, targetStartU);
+          if (placed && placed.isUps) {
+            // Immediately prompt UPS Input/Output wiring configuration when dropped into rack
+            openInspector(placed.instanceId, true);
+          } else {
+            showToast(`Snapped ${state.dragContext.item.name} to U${targetStartU}`);
+          }
+        } else if (state.dragContext.source === 'rack') {
+          const dev = state.installedDevices.find(d => d.instanceId === state.dragContext.instanceId);
+          if (dev) {
+            dev.startU = targetStartU;
+            renderAllTelemetry();
+            showToast(`Moved ${dev.label} to U${targetStartU}`);
+          }
+        }
+
+        handleDragEnd();
+      });
+    }
+
+    function setupTouchDragSupport() {
+      let touchBadge = null;
+
+      document.addEventListener('touchstart', (e) => {
+        const catCard = e.target.closest('.catalog-item');
+        const rackCard = e.target.closest('.installed-device-card');
+
+        if (catCard && !e.target.closest('button')) {
+          const template = state.catalog.find(c => c.id === catCard.dataset.catalogId);
+          if (!template) return;
+          state.dragContext = { source: 'catalog', item: template, grabOffsetU: 0 };
+          spawnBadge(e.touches[0], `${template.uHeight}U ${template.name}`);
+        } else if (rackCard) {
+          const dev = state.installedDevices.find(d => d.instanceId === rackCard.dataset.instanceId);
+          if (!dev) return;
+          state.dragContext = { source: 'rack', item: dev, instanceId: dev.instanceId, grabOffsetU: 0 };
+          spawnBadge(e.touches[0], `Moving ${dev.label}`);
+        }
+      }, { passive: true });
+
+      document.addEventListener('touchmove', (e) => {
+        if (!state.dragContext) return;
+        const touch = e.touches[0];
+        if (touchBadge) {
+          touchBadge.style.left = `${touch.clientX + 12}px`;
+          touchBadge.style.top = `${touch.clientY - 18}px`;
+        }
+        const dropZone = document.getElementById('rack-drop-zone');
+        const rect = dropZone.getBoundingClientRect();
+        if (touch.clientX >= rect.left && touch.clientX <= rect.right && touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+          updateSnapGhost(computeSnappedStartU(touch.clientY));
+        } else {
+          document.getElementById('rack-snap-ghost').classList.add('hidden');
+        }
+      }, { passive: true });
+
+      document.addEventListener('touchend', (e) => {
+        if (!state.dragContext) return;
+        const touch = e.changedTouches[0];
+        const dropZone = document.getElementById('rack-drop-zone');
+        const rect = dropZone.getBoundingClientRect();
+
+        if (touch.clientX >= rect.left && touch.clientX <= rect.right && touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+          const targetStartU = computeSnappedStartU(touch.clientY);
+          const uHeight = state.dragContext.item.uHeight;
+          const ignoreId = state.dragContext.source === 'rack' ? state.dragContext.instanceId : null;
+
+          if (isSlotRangeValid(targetStartU, uHeight, ignoreId)) {
+            if (state.dragContext.source === 'catalog') {
+              const placed = placeNewDeviceFromTemplate(state.dragContext.item, targetStartU);
+              if (placed && placed.isUps) openInspector(placed.instanceId, true);
+            } else {
+              const dev = state.installedDevices.find(d => d.instanceId === state.dragContext.instanceId);
+              if (dev) {
+                dev.startU = targetStartU;
+                renderAllTelemetry();
+              }
+            }
+          }
+        }
+
+        if (touchBadge) {
+          touchBadge.remove();
+          touchBadge = null;
+        }
+        handleDragEnd();
+      });
+
+      function spawnBadge(touch, text) {
+        touchBadge = document.createElement('div');
+        touchBadge.className = 'fixed z-50 pointer-events-none px-3 py-1.5 rounded-lg bg-cyan-600 text-white font-mono-tabular text-xs font-bold shadow-2xl border border-cyan-300';
+        touchBadge.style.left = `${touch.clientX + 12}px`;
+        touchBadge.style.top = `${touch.clientY - 18}px`;
+        touchBadge.textContent = text;
+        document.body.appendChild(touchBadge);
+      }
+    }
+
+    /**
+     * =====================================================================
+     * 3. REAL-TIME SIMULATION TICK & UPS BATTERY DRAIN ENGINE
+     * =====================================================================
+     */
+    function setSimSpeed(speed) {
+      state.simSpeed = speed;
+      appendEventLog(`Simulation speed set to ${speed}x.`, 'info');
+    }
+
+    function toggleCommercialFeed(feed) {
+      if (feed === 'A') {
+        state.feedAOnline = !state.feedAOnline;
+        appendEventLog(
+          `Commercial Feed A ${state.feedAOnline ? 'RESTORED (ONLINE)' : 'TRIPPED (OUTAGE)'}.`,
+          state.feedAOnline ? 'ok' : 'warn'
+        );
+      } else {
+        state.feedBOnline = !state.feedBOnline;
+        appendEventLog(
+          `Commercial Feed B ${state.feedBOnline ? 'RESTORED (ONLINE)' : 'TRIPPED (OUTAGE)'}.`,
+          state.feedBOnline ? 'ok' : 'warn'
+        );
+      }
+      renderAllTelemetry();
+    }
+
+    function setCommercialFeeds(aOnline, bOnline) {
+      const changedA = state.feedAOnline !== aOnline;
+      const changedB = state.feedBOnline !== bOnline;
+      state.feedAOnline = aOnline;
+      state.feedBOnline = bOnline;
+
+      if (!aOnline && !bOnline && (changedA || changedB)) {
+        appendEventLog('CRITICAL: Both Commercial Feed A & B tripped (Total Utility Blackout)!', 'crit');
+      } else if (aOnline && bOnline && (changedA || changedB)) {
+        appendEventLog('Utility restored: Both Commercial Feed A & B are ONLINE.', 'ok');
+      }
+      renderAllTelemetry();
+    }
+
+    function rechargeAllUps() {
+      let count = 0;
+      state.installedDevices.forEach(dev => {
+        if (dev.isUps) {
+          dev.chargePct = 100;
+          count++;
+        }
+      });
+      if (count > 0) {
+        appendEventLog(`Recharged ${count} rack UPS battery bank(s) to 100%.`, 'ok');
+        showToast('All UPS batteries recharged to 100%');
+        renderAllTelemetry();
+      }
+    }
+
+    function quickUpdateUpsWiring(instanceId, field, value) {
+      const dev = state.installedDevices.find(d => d.instanceId === instanceId && d.isUps);
+      if (!dev) return;
+      dev[field] = value;
+      const inLabel = dev.upsInput === 'A' ? 'Comm A' : 'Comm B';
+      const outLabel = dev.upsOutput === 'AB' ? 'A+B' : `Feed ${dev.upsOutput}`;
+      appendEventLog(`Rewired ${dev.label}: Input = ${inLabel} → Output = ${outLabel}.`, 'info');
+      renderAllTelemetry();
+    }
+
+    /**
+     * 250ms Tick Loop: Drains UPS batteries proportional to live supported Watt load
+     */
+    function simulationTick() {
+      const now = performance.now();
+      const dtRealSeconds = Math.min(1.0, (now - lastTickTimestamp) / 1000);
+      lastTickTimestamp = now;
+
+      const upsUnits = state.installedDevices.filter(d => d.isUps);
+      if (upsUnits.length === 0) return;
+
+      // Evaluate current load distribution before advancing battery energy
+      const snapshot = evaluateRackElectricalState();
+      let anyBatteryChanged = false;
+
+      snapshot.upsStates.forEach(uSnap => {
+        const liveUps = state.installedDevices.find(d => d.instanceId === uSnap.instanceId);
+        if (!liveUps) return;
+
+        const elapsedSimHours = (dtRealSeconds * state.simSpeed) / 3600;
+
+        if (uSnap.mode === 'ON_BATTERY') {
+          // Drain battery based on supported load + inverter efficiency & tare draw
+          const energyDrawnWh = uSnap.batteryDrainWatts * elapsedSimHours;
+          const pctDrop = (energyDrawnWh / liveUps.batteryCapacityWh) * 100;
+          const prevPct = liveUps.chargePct;
+          liveUps.chargePct = Math.max(0, liveUps.chargePct - pctDrop);
+          anyBatteryChanged = true;
+
+          if (prevPct > 0 && liveUps.chargePct === 0) {
+            appendEventLog(`CRITICAL: ${liveUps.label} battery DEPLETED (0%)! Output power lost.`, 'crit');
+            showToast(`${liveUps.label} battery depleted!`);
+          }
+        } else if (uSnap.mode === 'ONLINE' && liveUps.chargePct < 100) {
+          // Recharge battery at ~0.25C rate when commercial input is restored
+          const rechargeRateWatts = liveUps.batteryCapacityWh * 0.25;
+          const energyAddedWh = rechargeRateWatts * elapsedSimHours;
+          const pctGain = (energyAddedWh / liveUps.batteryCapacityWh) * 100;
+          liveUps.chargePct = Math.min(100, liveUps.chargePct + pctGain);
+          anyBatteryChanged = true;
+        }
+      });
+
+      if (anyBatteryChanged) {
+        renderAllTelemetry();
+      }
+    }
+
+    /**
+     * Core Electrical Topology & Load Evaluation Engine
+     */
+    function evaluateRackElectricalState() {
+      const upsDevices = state.installedDevices.filter(d => d.isUps);
+      const itDevices = state.installedDevices.filter(d => !d.isUps);
+
+      // Step 1: Determine each UPS's input status and whether it can supply output power
+      const upsPreliminary = upsDevices.map(u => {
+        const inputCommOnline = u.upsInput === 'A' ? state.feedAOnline : state.feedBOnline;
+        const canSupplyOutput = inputCommOnline || u.chargePct > 0;
+        let mode = 'ONLINE';
+        if (!inputCommOnline && u.chargePct > 0) mode = 'ON_BATTERY';
+        else if (!inputCommOnline && u.chargePct <= 0) mode = 'DEPLETED';
+
+        return {
+          ...u,
+          inputCommOnline,
+          canSupplyOutput,
+          mode
+        };
+      });
+
+      // Step 2: Determine how PDU-A and PDU-B are fed (via UPS output or direct Commercial Feed)
+      const upsWiredToA = upsPreliminary.filter(u => u.upsOutput === 'A' || u.upsOutput === 'AB');
+      const upsWiredToB = upsPreliminary.filter(u => u.upsOutput === 'B' || u.upsOutput === 'AB');
+
+      const activeUpsForA = upsWiredToA.filter(u => u.canSupplyOutput);
+      const activeUpsForB = upsWiredToB.filter(u => u.canSupplyOutput);
+
+      let pduAEnergized = false;
+      let pduASourceType = 'direct'; // 'direct' | 'ups'
+      if (upsWiredToA.length === 0) {
+        pduAEnergized = state.feedAOnline;
+        pduASourceType = 'direct';
+      } else {
+        pduAEnergized = activeUpsForA.length > 0;
+        pduASourceType = 'ups';
+      }
+
+      let pduBEnergized = false;
+      let pduBSourceType = 'direct';
+      if (upsWiredToB.length === 0) {
+        pduBEnergized = state.feedBOnline;
+        pduBSourceType = 'direct';
+      } else {
+        pduBEnergized = activeUpsForB.length > 0;
+        pduBSourceType = 'ups';
+      }
+
+      // Step 3: Compute IT Device power draw on PDU-A and PDU-B
+      let pduAWatts = 0;
+      let pduBWatts = 0;
+      let totalActiveItWatts = 0;
+      let totalUsedU = 0;
+
+      upsDevices.forEach(u => { totalUsedU += u.uHeight; });
+
+      const itDeviceStates = itDevices.map(dev => {
+        totalUsedU += dev.uHeight;
+        let isPowered = false;
+        let loadA = 0;
+        let loadB = 0;
+        let psuStatus = 'offline'; // 'dual-ok' | 'failover-A' | 'failover-B' | 'single-ok' | 'offline'
+
+        if (dev.feedMode === 'AB') {
+          if (pduAEnergized && pduBEnergized) {
+            isPowered = true;
+            loadA = dev.watts * 0.5;
+            loadB = dev.watts * 0.5;
+            psuStatus = 'dual-ok';
+          } else if (pduAEnergized && !pduBEnergized) {
+            isPowered = true;
+            loadA = dev.watts;
+            loadB = 0;
+            psuStatus = 'failover-A';
+          } else if (!pduAEnergized && pduBEnergized) {
+            isPowered = true;
+            loadA = 0;
+            loadB = dev.watts;
+            psuStatus = 'failover-B';
+          }
+        } else if (dev.feedMode === 'A') {
+          if (pduAEnergized) {
+            isPowered = true;
+            loadA = dev.watts;
+            psuStatus = 'single-ok';
+          }
+        } else if (dev.feedMode === 'B') {
+          if (pduBEnergized) {
+            isPowered = true;
+            loadB = dev.watts;
+            psuStatus = 'single-ok';
+          }
+        }
+
+        const activeWatts = isPowered ? dev.watts : 0;
+        const activeBtu = activeWatts * WATTS_TO_BTU;
+        pduAWatts += loadA;
+        pduBWatts += loadB;
+        totalActiveItWatts += activeWatts;
+
+        return {
+          ...dev,
+          isPowered,
+          loadA,
+          loadB,
+          activeWatts,
+          activeBtu,
+          psuStatus
+        };
+      });
+
+      // Step 4: Calculate exact load supported by each UPS and its battery runtime
+      const upsStates = upsPreliminary.map(u => {
+        let supportedLoadWatts = 0;
+        if (u.canSupplyOutput) {
+          if ((u.upsOutput === 'A' || u.upsOutput === 'AB') && activeUpsForA.length > 0) {
+            supportedLoadWatts += pduAWatts / activeUpsForA.length;
+          }
+          if ((u.upsOutput === 'B' || u.upsOutput === 'AB') && activeUpsForB.length > 0) {
+            supportedLoadWatts += pduBWatts / activeUpsForB.length;
+          }
+        }
+
+        const isOverloaded = supportedLoadWatts > u.ratedWatts;
+        // Calculate inverter battery drain rate (even when online, used to project standby runtime)
+        const projectedBatteryDrainWatts = (supportedLoadWatts / INVERTER_EFFICIENCY) + INVERTER_TARE_WATTS;
+        const batteryDrainWatts = u.mode === 'ON_BATTERY' ? projectedBatteryDrainWatts : 0;
+
+        const remainingWh = u.batteryCapacityWh * (u.chargePct / 100);
+        const hoursRemaining = u.chargePct <= 0 ? 0 : remainingWh / projectedBatteryDrainWatts;
+        const timeRemainingFormatted = formatRuntimeDuration(hoursRemaining);
+
+        return {
+          ...u,
+          supportedLoadWatts,
+          isOverloaded,
+          projectedBatteryDrainWatts,
+          batteryDrainWatts,
+          remainingWh,
+          hoursRemaining,
+          timeRemainingFormatted
+        };
+      });
+
+      // Log state transitions automatically
+      upsStates.forEach(u => {
+        const prevMode = state.previousUpsModes[u.instanceId];
+        if (prevMode && prevMode !== u.mode) {
+          if (u.mode === 'ON_BATTERY') {
+            appendEventLog(`ALERT: ${u.label} switched to ON BATTERY (${Math.round(u.supportedLoadWatts)}W load, est. ${u.timeRemainingFormatted}).`, 'warn');
+          } else if (u.mode === 'ONLINE' && prevMode === 'ON_BATTERY') {
+            appendEventLog(`${u.label} returned to ONLINE utility power (battery at ${u.chargePct.toFixed(1)}%).`, 'ok');
+          }
+        }
+        state.previousUpsModes[u.instanceId] = u.mode;
+      });
+
+      if (state.previousPduStates.A !== pduAEnergized) {
+        appendEventLog(`Rack PDU-A is now ${pduAEnergized ? 'ENERGIZED' : 'UNPOWERED (DEAD)'}.`, pduAEnergized ? 'ok' : 'crit');
+        state.previousPduStates.A = pduAEnergized;
+      }
+      if (state.previousPduStates.B !== pduBEnergized) {
+        appendEventLog(`Rack PDU-B is now ${pduBEnergized ? 'ENERGIZED' : 'UNPOWERED (DEAD)'}.`, pduBEnergized ? 'ok' : 'crit');
+        state.previousPduStates.B = pduBEnergized;
+      }
+
+      // Breaker capacity based on selected voltage (120V -> 20A = 2400W, 208V -> 30A = 6240W)
+      const breakerAmps = state.voltage === 120 ? 20 : 30;
+      const maxWattsPerPdu = state.voltage * breakerAmps;
+
+      const pduAAmps = pduAWatts / state.voltage;
+      const pduBAmps = pduBWatts / state.voltage;
+      const pduAPct = (pduAWatts / maxWattsPerPdu) * 100;
+      const pduBPct = (pduBWatts / maxWattsPerPdu) * 100;
+
+      const totalAmps = totalActiveItWatts / state.voltage;
+      const totalBtu = totalActiveItWatts * WATTS_TO_BTU;
+      const totalCoolingTons = totalBtu / BTU_PER_TON;
+
+      return {
+        upsStates,
+        itDeviceStates,
+        pduAEnergized,
+        pduBEnergized,
+        pduASourceType,
+        pduBSourceType,
+        pduAWatts,
+        pduBWatts,
+        pduAAmps,
+        pduBAmps,
+        pduAPct,
+        pduBPct,
+        breakerAmps,
+        maxWattsPerPdu,
+        totalActiveItWatts,
+        totalAmps,
+        totalBtu,
+        totalCoolingTons,
+        totalUsedU
+      };
+    }
+
+    /**
+     * Format Hours into crisp Xh Ym Zs or Ym Zs countdown string
+     */
+    function formatRuntimeDuration(hours) {
+      if (!isFinite(hours) || hours <= 0) return '0m 00s';
+      const totalSeconds = Math.max(0, Math.round(hours * 3600));
+      const h = Math.floor(totalSeconds / 3600);
+      const m = Math.floor((totalSeconds % 3600) / 60);
+      const s = totalSeconds % 60;
+
+      if (h > 0) {
+        return `${h}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
+      }
+      return `${m}m ${String(s).padStart(2, '0')}s`;
+    }
+
+    /**
+     * =====================================================================
+     * 4. RENDER RACK FACEPLATES, UPS MONITOR, TOPOLOGY & TELEMETRY
+     * =====================================================================
+     */
+    function renderAllTelemetry() {
+      const t = evaluateRackElectricalState();
+
+      renderRackHardwareLayer(t);
+      renderCommercialBreakersUI(t);
+      renderTopologyVisualizer(t);
+      renderUpsMonitorList(t);
+      renderPduAndThermalTelemetry(t);
+    }
+
+    /**
+     * Render All Installed Devices (UPS + IT Hardware) inside the Rack Elevation
+     */
+    function renderRackHardwareLayer(t) {
+      const layer = document.getElementById('rack-devices-layer');
+      const allItems = [...t.upsStates, ...t.itDeviceStates];
+
+      layer.innerHTML = allItems.map(dev => {
+        const topPx = (state.rackHeight - (dev.startU + dev.uHeight - 1)) * RU_HEIGHT_PX;
+        const heightPx = dev.uHeight * RU_HEIGHT_PX;
+        const uLabel = dev.uHeight > 1 ? `U${dev.startU}–${dev.startU + dev.uHeight - 1}` : `U${dev.startU}`;
+
+        if (dev.isUps) {
+          return renderUpsRackFaceplate(dev, topPx, heightPx, uLabel);
+        }
+
+        const powerClass = dev.isPowered ? 'chassis-online' : 'chassis-offline';
+        const borderClass = !dev.isPowered
+          ? 'border-rose-700/80'
+          : dev.psuStatus.startsWith('failover')
+            ? 'border-amber-400/90 shadow-[0_0_10px_rgba(251,191,36,0.25)]'
+            : 'border-slate-600/90 hover:border-cyan-400';
+
+        const chassisGraphic = buildItChassisGraphic(dev);
+
+        let overlayHtml = '';
+        if (state.showOverlay) {
+          if (!dev.isPowered) {
+            overlayHtml = `
+              <div class="pointer-events-none flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-950/95 border border-rose-500 text-rose-200 font-mono-tabular text-[9px] font-bold shadow">
+                <span>⚡ UNPOWERED (0W)</span>
+              </div>
+            `;
+          } else {
+            const splitText = dev.feedMode === 'AB'
+              ? `<span class="text-cyan-300">A:${Math.round(dev.loadA)}W</span> <span class="text-slate-500">|</span> <span class="text-amber-300">B:${Math.round(dev.loadB)}W</span>`
+              : dev.feedMode === 'A'
+                ? `<span class="text-cyan-300">A:${Math.round(dev.loadA)}W</span>`
+                : `<span class="text-amber-300">B:${Math.round(dev.loadB)}W</span>`;
+
+            const failoverBadge = dev.psuStatus === 'failover-A'
+              ? `<span class="px-1 rounded bg-cyan-400 text-slate-950 font-extrabold">FAILOVER→A</span>`
+              : dev.psuStatus === 'failover-B'
+                ? `<span class="px-1 rounded bg-amber-400 text-slate-950 font-extrabold">FAILOVER→B</span>`
+                : '';
+
+            overlayHtml = `
+              <div class="pointer-events-none flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-slate-950/90 border border-slate-700/90 font-mono-tabular text-[9px] shadow">
+                ${failoverBadge}
+                ${splitText}
+                <span class="hidden sm:inline text-slate-500">•</span>
+                <span class="hidden sm:inline text-slate-300">${Math.round(dev.activeBtu).toLocaleString()} BTU/h</span>
+              </div>
+            `;
+          }
+        }
+
+        return `
+          <div
+            draggable="true"
+            ondragstart="handleInstalledDragStart(event, '${dev.instanceId}')"
+            ondragend="handleDragEnd()"
+            onclick="openInspector('${dev.instanceId}')"
+            data-instance-id="${dev.instanceId}"
+            style="top: ${topPx}px; height: ${heightPx}px;"
+            class="installed-device-card group absolute left-0.5 right-0.5 rounded-[4px] border ${borderClass} ${powerClass} bg-slate-900 overflow-hidden cursor-pointer select-none flex flex-col justify-between transition-colors"
+            title="Click to inspect ${escapeHtml(dev.label)} • Drag vertically to reposition"
+          >
+            ${chassisGraphic}
+            <div class="absolute inset-0 px-2.5 flex items-center justify-between gap-2 pointer-events-none">
+              <div class="flex items-center gap-1.5 min-w-0 bg-slate-950/85 border border-slate-700/80 px-1.5 py-0.5 rounded shadow">
+                <span class="font-mono-tabular text-[9px] font-bold text-slate-400">${uLabel}</span>
+                <span class="font-mono-tabular text-[10px] font-bold text-white truncate max-w-[115px] sm:max-w-[165px]">${escapeHtml(dev.label)}</span>
+              </div>
+              ${overlayHtml}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    /**
+     * Render Detailed UPS Faceplate with Ventilation Slots, Backlit LCD, Battery Bar, Wiring Badge & Countdown
+     */
+    function renderUpsRackFaceplate(ups, topPx, heightPx, uLabel) {
+      const isOnline = ups.mode === 'ONLINE';
+      const isOnBattery = ups.mode === 'ON_BATTERY';
+      const isDepleted = ups.mode === 'DEPLETED';
+
+      let borderClass = 'border-emerald-500/80';
+      let pulseClass = '';
+      let lcdBg = 'bg-emerald-950/95 border-emerald-500/60 text-emerald-300';
+      let statusLabel = 'ONLINE';
+      let barFillClass = 'bg-emerald-400';
+
+      if (ups.isOverloaded) {
+        borderClass = 'border-rose-500';
+        pulseClass = 'overload-pulse';
+        lcdBg = 'bg-rose-950/95 border-rose-500 text-rose-200';
+        statusLabel = 'OVERLOAD';
+        barFillClass = 'bg-rose-500';
+      } else if (isOnBattery) {
+        borderClass = 'border-amber-400';
+        pulseClass = 'ups-on-battery-pulse';
+        lcdBg = 'bg-amber-950/95 border-amber-400 text-amber-200';
+        statusLabel = 'ON BATTERY';
+        barFillClass = ups.chargePct < 25 ? 'bg-rose-500' : 'bg-amber-400';
+      } else if (isDepleted) {
+        borderClass = 'border-rose-700';
+        lcdBg = 'bg-rose-950/90 border-rose-700 text-rose-400';
+        statusLabel = 'DEPLETED';
+        barFillClass = 'bg-rose-600';
+      }
+
+      const inLabel = ups.upsInput === 'A' ? 'Comm A' : 'Comm B';
+      const outLabel = ups.upsOutput === 'AB' ? 'A+B' : `Feed ${ups.upsOutput}`;
+      const pctInt = Math.round(ups.chargePct);
+
+      return `
+        <div
+          draggable="true"
+          ondragstart="handleInstalledDragStart(event, '${ups.instanceId}')"
+          ondragend="handleDragEnd()"
+          onclick="openInspector('${ups.instanceId}')"
+          data-instance-id="${ups.instanceId}"
+          style="top: ${topPx}px; height: ${heightPx}px;"
+          class="installed-device-card absolute left-0.5 right-0.5 rounded-[4px] border-2 ${borderClass} ${pulseClass} bg-gradient-to-b from-zinc-800 via-zinc-900 to-zinc-950 overflow-hidden cursor-pointer select-none flex items-stretch shadow-lg"
+          title="Click to configure UPS Input/Output wiring (${escapeHtml(ups.label)})"
+        >
+          <!-- Left Rack Ear -->
+          <div class="w-3 bg-zinc-800 border-r border-zinc-600 flex flex-col justify-around items-center py-0.5 shrink-0">
+            <span class="w-1.5 h-1.5 rounded-full bg-zinc-950 border border-zinc-500"></span>
+            ${ups.uHeight > 1 ? '<span class="w-1.5 h-1.5 rounded-full bg-zinc-950 border border-zinc-500"></span>' : ''}
+          </div>
+
+          <!-- Ventilation Grille (Left) -->
+          <div class="hidden sm:flex w-14 border-r border-zinc-800/90 px-1.5 py-1 flex-col justify-center gap-[2px] opacity-65 shrink-0">
+            <div class="h-[2px] bg-zinc-950 rounded"></div>
+            <div class="h-[2px] bg-zinc-950 rounded"></div>
+            <div class="h-[2px] bg-zinc-950 rounded"></div>
+            ${ups.uHeight > 1 ? '<div class="h-[2px] bg-zinc-950 rounded"></div><div class="h-[2px] bg-zinc-950 rounded"></div>' : ''}
+          </div>
+
+          <!-- Center Interactive Backlit LCD & Telemetry Readout -->
+          <div class="flex-1 px-2 py-0.5 flex items-center justify-between gap-2 min-w-0">
+            <!-- Hostname & Wiring Pill -->
+            <div class="flex items-center gap-1.5 min-w-0">
+              <span class="font-mono-tabular text-[9px] font-bold text-zinc-400 shrink-0">${uLabel}</span>
+              <span class="font-mono-tabular text-[10px] font-bold text-white truncate">${escapeHtml(ups.label)}</span>
+              <span class="hidden md:inline-block px-1.5 py-0.2 rounded bg-zinc-950 border border-zinc-700 font-mono-tabular text-[9px] text-cyan-300 shrink-0">
+                IN:${inLabel} → OUT:${outLabel}
+              </span>
+            </div>
+
+            <!-- Backlit LCD Status, Battery Bar & Time Remaining -->
+            <div class="flex items-center gap-2 px-2 py-0.5 rounded border ${lcdBg} font-mono-tabular text-[9px] shrink-0 shadow-inner">
+              <span class="font-extrabold tracking-tight">${statusLabel}</span>
+
+              <!-- Mini Battery Charge Bar -->
+              <div class="flex items-center gap-1">
+                <div class="w-10 h-2 bg-black/70 rounded-[2px] border border-current/40 overflow-hidden p-[1px]">
+                  <div class="h-full ${barFillClass} transition-all duration-200" style="width: ${pctInt}%"></div>
+                </div>
+                <span class="font-bold">${pctInt}%</span>
+              </div>
+
+              <span class="hidden sm:inline opacity-60">|</span>
+              <span class="hidden sm:inline font-semibold">${Math.round(ups.supportedLoadWatts)}W</span>
+              <span class="opacity-60">|</span>
+              <span class="font-extrabold text-white" title="Estimated Time Remaining on Battery">⏱ ${ups.timeRemainingFormatted}</span>
+            </div>
+          </div>
+
+          <!-- Right Rack Ear -->
+          <div class="w-3.5 bg-zinc-800 border-l border-zinc-600 flex flex-col justify-center items-center gap-1 shrink-0">
+            <span class="w-1.5 h-1.5 rounded-full ${isDepleted ? 'bg-rose-500' : isOnBattery ? 'bg-amber-400 led-blink-fast' : 'bg-emerald-400 shadow-[0_0_6px_#34d399]'}"></span>
+          </div>
+        </div>
+      `;
+    }
+
+    /**
+     * Build Procedural Faceplate Graphics for Servers, Switches, SAN & Patch Panels
+     */
+    function buildItChassisGraphic(dev) {
+      // Determine PSU-A and PSU-B status LEDs
+      const psuAOk = (dev.feedMode === 'AB' || dev.feedMode === 'A') && dev.isPowered && (dev.psuStatus !== 'failover-B');
+      const psuBOk = (dev.feedMode === 'AB' || dev.feedMode === 'B') && dev.isPowered && (dev.psuStatus !== 'failover-A');
+
+      const ledAClass = dev.feedMode === 'B'
+        ? 'bg-slate-700'
+        : psuAOk
+          ? (dev.psuStatus === 'failover-A' ? 'bg-amber-400 shadow-[0_0_5px_#fbbf24]' : 'bg-emerald-400 shadow-[0_0_5px_#34d399]')
+          : 'bg-rose-500 shadow-[0_0_5px_#f43f5e]';
+
+      const ledBClass = dev.feedMode === 'A'
+        ? 'bg-slate-700'
+        : psuBOk
+          ? (dev.psuStatus === 'failover-B' ? 'bg-amber-400 shadow-[0_0_5px_#fbbf24]' : 'bg-emerald-400 shadow-[0_0_5px_#34d399]')
+          : 'bg-rose-500 shadow-[0_0_5px_#f43f5e]';
+
+      const leftEar = `
+        <div class="w-3 h-full bg-gradient-to-r from-slate-700 to-slate-800 border-r border-slate-600 flex flex-col justify-around items-center py-0.5 shrink-0">
+          <span class="w-1.5 h-1.5 rounded-full bg-slate-950 border border-slate-500"></span>
+          ${dev.uHeight > 1 ? '<span class="w-1.5 h-1.5 rounded-full bg-slate-950 border border-slate-500"></span>' : ''}
+        </div>
+      `;
+
+      const rightEar = `
+        <div class="w-4 h-full bg-gradient-to-l from-slate-700 to-slate-800 border-l border-slate-600 flex flex-col justify-center items-center gap-0.5 shrink-0">
+          <span class="w-1.5 h-1.5 rounded-full ${ledAClass}" title="PSU-A Status"></span>
+          <span class="w-1.5 h-1.5 rounded-full ${ledBClass}" title="PSU-B Status"></span>
+        </div>
+      `;
+
+      const blink = dev.isPowered ? 'led-blink-fast' : '';
+
+      if (dev.style === 'switch-48' || dev.style === 'switch-sfp') {
+        const isSfp = dev.style === 'switch-sfp';
+        const portBorder = isSfp ? 'border-cyan-500/50 bg-slate-950' : 'border-slate-600 bg-slate-950';
+        const linkLed = dev.isPowered ? (isSfp ? 'bg-cyan-400' : 'bg-emerald-400') : 'bg-slate-800';
+        const cols = isSfp ? 16 : 24;
+        let ports = '';
+        for (let i = 0; i < cols; i++) {
+          ports += `
+            <div class="flex flex-col gap-[2px] flex-1">
+              <div class="h-1.5 ${portBorder} border rounded-[1px] relative">
+                <span class="absolute top-0 right-0 w-1 h-0.5 ${linkLed} ${i % 3 === 0 ? blink : ''}"></span>
+              </div>
+              <div class="h-1.5 ${portBorder} border rounded-[1px] relative">
+                <span class="absolute bottom-0 left-0 w-1 h-0.5 ${linkLed} ${i % 4 === 0 ? blink : ''}"></span>
+              </div>
+            </div>
+          `;
+        }
+        return `
+          <div class="w-full h-full flex items-center bg-gradient-to-b from-slate-800 to-slate-900">
+            ${leftEar}
+            <div class="flex-1 h-full px-2 py-1 flex items-center gap-1.5 overflow-hidden">
+              <div class="w-8 h-3.5 rounded-[2px] bg-cyan-950/90 border border-cyan-500/40 flex items-center justify-center shrink-0">
+                <span class="text-[7px] font-mono-tabular text-cyan-300">${isSfp ? '100G' : 'PoE+'}</span>
+              </div>
+              <div class="flex-1 flex items-center gap-[2px]">${ports}</div>
+            </div>
+            ${rightEar}
+          </div>
+        `;
+      }
+
+      if (dev.style === 'storage-24' || dev.style === 'gpu-4u') {
+        const rows = dev.uHeight >= 4 ? 4 : 2;
+        const cols = 6;
+        let grid = '';
+        for (let r = 0; r < rows; r++) {
+          let rowCells = '';
+          for (let c = 0; c < cols; c++) {
+            const led = dev.isPowered ? ((r + c) % 5 === 0 ? 'bg-amber-400 led-blink-fast' : 'bg-emerald-400') : 'bg-slate-800';
+            rowCells += `
+              <div class="flex-1 h-full bg-slate-950 border border-slate-700/90 rounded-[2px] flex items-center justify-between px-1">
+                <span class="w-2 h-[2px] bg-slate-700"></span>
+                <span class="w-1 h-1 rounded-full ${led}"></span>
+              </div>
+            `;
+          }
+          grid += `<div class="flex-1 flex gap-1">${rowCells}</div>`;
+        }
+        return `
+          <div class="w-full h-full flex items-center bg-gradient-to-b from-slate-800 to-slate-900">
+            ${leftEar}
+            <div class="flex-1 h-full p-1.5 flex flex-col gap-1">${grid}</div>
+            ${rightEar}
+          </div>
+        `;
+      }
+
+      if (dev.style === 'patch') {
+        return `
+          <div class="w-full h-full flex items-center bg-gradient-to-b from-slate-800 to-slate-900">
+            ${leftEar}
+            <div class="flex-1 h-full px-2 flex items-center">
+              <div class="w-full h-3 rounded-[2px] bg-slate-950 border border-slate-700 flex items-center justify-around px-1">
+                ${Array.from({ length: 24 }).map(() => `<span class="w-1.5 h-1.5 bg-slate-800 border border-slate-600 rounded-[1px]"></span>`).join('')}
+              </div>
+            </div>
+            ${rightEar}
+          </div>
+        `;
+      }
+
+      // Default 1U / 2U Server Drive Bays + Diagnostic LCD
+      const bayCount = dev.uHeight === 1 ? 8 : 12;
+      const bays = Array.from({ length: bayCount }).map((_, idx) => {
+        const led = dev.isPowered ? (idx % 3 === 0 ? 'bg-emerald-400 led-blink-fast' : 'bg-emerald-400') : 'bg-slate-800';
+        return `
+          <div class="flex-1 h-full bg-slate-950 border border-slate-700 rounded-[2px] flex flex-col justify-between p-0.5">
+            <span class="w-1 h-1 rounded-full ${led}"></span>
+            <span class="w-full h-[2px] bg-slate-800"></span>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="w-full h-full flex items-center bg-gradient-to-b from-slate-800 to-slate-900">
+          ${leftEar}
+          <div class="flex-1 h-full px-2 py-1 flex items-center gap-2">
+            <div class="flex-1 h-full flex gap-1">${bays}</div>
+            <div class="w-14 h-4 rounded-[2px] bg-blue-950 border border-blue-500/40 hidden sm:flex items-center justify-center shrink-0">
+              <span class="text-[8px] font-mono-tabular text-blue-300">${dev.isPowered ? 'OK 24°C' : 'OFFLINE'}</span>
+            </div>
+          </div>
+          ${rightEar}
+        </div>
+      `;
+    }
+
+    /**
+     * Update Commercial Feed Breakers UI
+     */
+    function renderCommercialBreakersUI(t) {
+      const btnA = document.getElementById('btn-breaker-a');
+      const ledA = document.getElementById('breaker-led-a');
+      const cardA = document.getElementById('breaker-card-a');
+
+      const btnB = document.getElementById('btn-breaker-b');
+      const ledB = document.getElementById('breaker-led-b');
+      const cardB = document.getElementById('breaker-card-b');
+
+      if (state.feedAOnline) {
+        btnA.className = 'w-full py-1.5 px-2 rounded-md bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/50 text-emerald-300 font-mono-tabular text-[11px] font-bold flex items-center justify-center gap-1 transition';
+        btnA.innerHTML = '<span>● ONLINE</span>';
+        ledA.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]';
+        cardA.className = 'bg-dcim-bg border border-cyan-500/40 rounded-lg p-2.5 flex flex-col justify-between gap-2 transition-all';
+      } else {
+        btnA.className = 'w-full py-1.5 px-2 rounded-md bg-rose-600/30 hover:bg-rose-600/40 border border-rose-500 text-rose-200 font-mono-tabular text-[11px] font-bold flex items-center justify-center gap-1 transition';
+        btnA.innerHTML = '<span>✕ TRIPPED</span>';
+        ledA.className = 'w-2.5 h-2.5 rounded-full bg-rose-500 shadow-[0_0_8px_#f43f5e]';
+        cardA.className = 'bg-rose-950/30 border border-rose-500/70 rounded-lg p-2.5 flex flex-col justify-between gap-2 transition-all';
+      }
+
+      if (state.feedBOnline) {
+        btnB.className = 'w-full py-1.5 px-2 rounded-md bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/50 text-emerald-300 font-mono-tabular text-[11px] font-bold flex items-center justify-center gap-1 transition';
+        btnB.innerHTML = '<span>● ONLINE</span>';
+        ledB.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]';
+        cardB.className = 'bg-dcim-bg border border-amber-500/40 rounded-lg p-2.5 flex flex-col justify-between gap-2 transition-all';
+      } else {
+        btnB.className = 'w-full py-1.5 px-2 rounded-md bg-rose-600/30 hover:bg-rose-600/40 border border-rose-500 text-rose-200 font-mono-tabular text-[11px] font-bold flex items-center justify-center gap-1 transition';
+        btnB.innerHTML = '<span>✕ TRIPPED</span>';
+        ledB.className = 'w-2.5 h-2.5 rounded-full bg-rose-500 shadow-[0_0_8px_#f43f5e]';
+        cardB.className = 'bg-rose-950/30 border border-rose-500/70 rounded-lg p-2.5 flex flex-col justify-between gap-2 transition-all';
+      }
+
+      const globalBadge = document.getElementById('sim-global-badge');
+      const anyUpsOnBattery = t.upsStates.some(u => u.mode === 'ON_BATTERY');
+      if (!t.pduAEnergized && !t.pduBEnergized) {
+        globalBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono-tabular font-bold bg-rose-600 text-white';
+        globalBadge.textContent = 'BLACKOUT';
+      } else if (anyUpsOnBattery) {
+        globalBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono-tabular font-bold bg-amber-500/25 text-amber-200 border border-amber-400 animate-pulse';
+        globalBadge.textContent = 'ON BATTERY';
+      } else if (!state.feedAOnline || !state.feedBOnline) {
+        globalBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono-tabular font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40';
+        globalBadge.textContent = 'PARTIAL OUTAGE';
+      } else {
+        globalBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono-tabular font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30';
+        globalBadge.textContent = 'UTILITY OK';
+      }
+    }
+
+    /**
+     * Render Live Power Topology Path Visualizer (Comm A/B -> UPS -> PDU-A/B)
+     */
+    function renderTopologyVisualizer(t) {
+      const container = document.getElementById('power-topology-visualizer');
+
+      const commAPill = state.feedAOnline
+        ? `<span class="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">Comm A: ON</span>`
+        : `<span class="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40">Comm A: TRIP</span>`;
+
+      const commBPill = state.feedBOnline
+        ? `<span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">Comm B: ON</span>`
+        : `<span class="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40">Comm B: TRIP</span>`;
+
+      const upsNodesHtml = t.upsStates.length === 0
+        ? `<div class="text-center text-[10px] text-slate-500 py-0.5">Direct Utility Feed (No UPS Installed)</div>`
+        : t.upsStates.map(u => {
+            const badgeColor = u.mode === 'ONLINE'
+              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+              : u.mode === 'ON_BATTERY'
+                ? 'bg-amber-500/25 text-amber-200 border-amber-400'
+                : 'bg-rose-500/25 text-rose-300 border-rose-500';
+            const inStr = u.upsInput === 'A' ? 'Comm A' : 'Comm B';
+            const outStr = u.upsOutput === 'AB' ? 'PDU-A & PDU-B' : `PDU-${u.upsOutput}`;
+            return `
+              <div class="flex items-center justify-between gap-1 px-2 py-1 rounded border ${badgeColor} text-[10px]">
+                <span class="font-bold truncate">${escapeHtml(u.label)}</span>
+                <span>${inStr} → ${outStr} (${Math.round(u.chargePct)}%)</span>
+              </div>
+            `;
+          }).join('');
+
+      const pduAPill = t.pduAEnergized
+        ? `<span class="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">PDU-A: ${Math.round(t.pduAWatts)}W</span>`
+        : `<span class="px-1.5 py-0.5 rounded bg-rose-950 text-rose-400 border border-rose-700">PDU-A: DEAD</span>`;
+
+      const pduBPill = t.pduBEnergized
+        ? `<span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">PDU-B: ${Math.round(t.pduBWatts)}W</span>`
+        : `<span class="px-1.5 py-0.5 rounded bg-rose-950 text-rose-400 border border-rose-700">PDU-B: DEAD</span>`;
+
+      container.innerHTML = `
+        <div class="flex items-center justify-between gap-2">${commAPill}${commBPill}</div>
+        <div class="flex justify-center text-slate-600 text-[9px]">▼ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ▼</div>
+        <div class="space-y-1">${upsNodesHtml}</div>
+        <div class="flex justify-center text-slate-600 text-[9px]">▼ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ▼</div>
+        <div class="flex items-center justify-between gap-2">${pduAPill}${pduBPill}</div>
+      `;
+    }
+
+    /**
+     * Render Interactive UPS Wiring & Battery Monitor Cards
+     */
+    function renderUpsMonitorList(t) {
+      const listEl = document.getElementById('ups-monitor-list');
+      document.getElementById('ups-count-badge').textContent = `${t.upsStates.length} UPS`;
+
+      if (t.upsStates.length === 0) {
+        listEl.innerHTML = `
+          <div class="bg-dcim-bg border border-dashed border-slate-700 rounded-lg p-3 text-center text-[11px] text-slate-400">
+            No UPS installed. Drag a <strong class="text-emerald-300">Smart-UPS</strong> from the left catalog to simulate battery backup and runtime drain.
+          </div>
+        `;
+        return;
+      }
+
+      listEl.innerHTML = t.upsStates.map(u => {
+        const pct = Math.max(0, Math.min(100, u.chargePct));
+        let cardBorder = 'border-emerald-500/40';
+        let statusBadge = `<span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-mono-tabular font-bold">ONLINE / BYPASS</span>`;
+        let barColor = 'bg-gradient-to-r from-emerald-600 to-emerald-400';
+
+        if (u.isOverloaded) {
+          cardBorder = 'border-rose-500 overload-pulse';
+          statusBadge = `<span class="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[10px] font-mono-tabular font-bold">OVERLOAD</span>`;
+          barColor = 'bg-rose-500';
+        } else if (u.mode === 'ON_BATTERY') {
+          cardBorder = 'border-amber-400 ups-on-battery-pulse';
+          statusBadge = `<span class="px-1.5 py-0.5 rounded bg-amber-500/25 text-amber-200 border border-amber-400 text-[10px] font-mono-tabular font-bold">ON BATTERY</span>`;
+          barColor = pct < 25 ? 'bg-rose-500' : 'bg-amber-400';
+        } else if (u.mode === 'DEPLETED') {
+          cardBorder = 'border-rose-700';
+          statusBadge = `<span class="px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-700 text-[10px] font-mono-tabular font-bold">DEPLETED (0%)</span>`;
+          barColor = 'bg-rose-700';
+        }
+
+        return `
+          <div class="bg-dcim-bg border ${cardBorder} rounded-lg p-2.5 space-y-2 transition-all">
+            <!-- Header: UPS Name & Status Badge -->
+            <div class="flex items-center justify-between gap-2">
+              <div class="min-w-0">
+                <div class="text-xs font-mono-tabular font-bold text-white truncate cursor-pointer hover:text-cyan-300" onclick="openInspector('${u.instanceId}')">
+                  ${escapeHtml(u.label)} <span class="text-[10px] font-normal text-slate-400">(U${u.startU})</span>
+                </div>
+                <div class="text-[10px] text-slate-400 truncate">${escapeHtml(u.name)}</div>
+              </div>
+              ${statusBadge}
+            </div>
+
+            <!-- Inline Input & Output Wiring Selectors -->
+            <div class="grid grid-cols-2 gap-1.5 pt-0.5">
+              <div>
+                <label class="block text-[9px] font-mono-tabular uppercase text-slate-400 mb-0.5">Input (Commercial)</label>
+                <select onchange="quickUpdateUpsWiring('${u.instanceId}', 'upsInput', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[11px] font-mono-tabular text-cyan-300 font-semibold focus:outline-none focus:border-cyan-500">
+                  <option value="A" ${u.upsInput === 'A' ? 'selected' : ''}>Commercial Feed A</option>
+                  <option value="B" ${u.upsInput === 'B' ? 'selected' : ''}>Commercial Feed B</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[9px] font-mono-tabular uppercase text-slate-400 mb-0.5">Output (Rack Feed)</label>
+                <select onchange="quickUpdateUpsWiring('${u.instanceId}', 'upsOutput', this.value)" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[11px] font-mono-tabular text-amber-300 font-semibold focus:outline-none focus:border-amber-500">
+                  <option value="AB" ${u.upsOutput === 'AB' ? 'selected' : ''}>Both Feeds (A+B)</option>
+                  <option value="A" ${u.upsOutput === 'A' ? 'selected' : ''}>Feed A Only</option>
+                  <option value="B" ${u.upsOutput === 'B' ? 'selected' : ''}>Feed B Only</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Battery Charge Bar -->
+            <div class="space-y-1">
+              <div class="flex items-center justify-between text-[11px] font-mono-tabular">
+                <span class="text-slate-400">Battery Charge</span>
+                <span class="font-bold text-white">${pct.toFixed(1)}% <span class="text-slate-500 font-normal">(${Math.round(u.remainingWh)} / ${u.batteryCapacityWh} Wh)</span></span>
+              </div>
+              <div class="h-2.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                <div class="h-full ${barColor} transition-all duration-200" style="width: ${pct}%"></div>
+              </div>
+            </div>
+
+            <!-- Load & Prominent Estimated Time Remaining -->
+            <div class="bg-slate-900/90 border border-slate-800 rounded-md px-2.5 py-1.5 flex items-center justify-between font-mono-tabular text-[11px]">
+              <div>
+                <div class="text-[9px] text-slate-400 uppercase">Supported Load</div>
+                <div class="font-bold ${u.isOverloaded ? 'text-rose-400' : 'text-slate-200'}">
+                  ${Math.round(u.supportedLoadWatts)}W <span class="text-slate-500 font-normal">/ ${u.ratedWatts}W</span>
+                </div>
+              </div>
+              <div class="text-right">
+                <div class="text-[9px] text-slate-400 uppercase">Est. Time Remaining</div>
+                <div class="text-xs font-extrabold ${u.mode === 'ON_BATTERY' ? 'text-amber-300' : u.mode === 'DEPLETED' ? 'text-rose-400' : 'text-emerald-300'}">
+                  ${u.timeRemainingFormatted}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    /**
+     * Render PDU-A / PDU-B Gauges & Thermal BTU/hr KPIs
+     */
+    function renderPduAndThermalTelemetry(t) {
+      document.getElementById('telemetry-circuit-label').textContent = `${state.voltage}V • ${t.breakerAmps}A/Feed`;
+      document.getElementById('footer-ru-summary').textContent = `${t.totalUsedU} / ${state.rackHeight} RU USED`;
+
+      // Active IT Load & Current
+      document.getElementById('kpi-total-watts').textContent = `${Math.round(t.totalActiveItWatts).toLocaleString()} W`;
+      document.getElementById('kpi-total-amps').textContent = `${t.totalAmps.toFixed(1)} A @ ${state.voltage}V`;
+
+      // Thermal BTU/hr & Tons of Cooling
+      document.getElementById('kpi-total-btu').textContent = `${Math.round(t.totalBtu).toLocaleString()} BTU/h`;
+      document.getElementById('kpi-total-tons').textContent = `${t.totalCoolingTons.toFixed(2)} Tons Cooling`;
+
+      // PDU-A Telemetry & Flanking Strip
+      document.getElementById('telemetry-a-watts').textContent = `${Math.round(t.pduAWatts).toLocaleString()} W`;
+      document.getElementById('telemetry-a-amps').textContent = `${t.pduAAmps.toFixed(1)} A`;
+      document.getElementById('telemetry-a-sub').textContent = `${Math.round(t.pduAWatts).toLocaleString()}W / ${t.maxWattsPerPdu.toLocaleString()}W max`;
+      document.getElementById('telemetry-a-pct').textContent = `${t.pduAPct.toFixed(1)}%`;
+
+      const clampedA = Math.min(100, t.pduAPct);
+      const barA = document.getElementById('bar-feed-a');
+      const vFillA = document.getElementById('pdu-a-vertical-fill');
+      const meterA = document.getElementById('meter-box-a');
+      const stripA = document.getElementById('pdu-strip-a');
+
+      barA.style.width = `${clampedA}%`;
+      vFillA.style.height = `${clampedA}%`;
+      document.getElementById('pdu-a-pct-mini').textContent = t.pduAEnergized ? `${Math.round(t.pduAPct)}%` : 'DEAD';
+      document.getElementById('pdu-a-src-mini').textContent = t.pduASourceType === 'ups' ? 'UPS-FED' : 'COMM A';
+
+      if (!t.pduAEnergized) {
+        stripA.classList.add('opacity-45');
+        document.getElementById('pdu-a-status-dot').className = 'w-2 h-2 rounded-full bg-rose-500 mx-auto mt-1';
+        meterA.className = 'bg-rose-950/25 border border-rose-800/70 rounded-lg p-2.5 space-y-1.5';
+      } else if (t.pduAPct > 100) {
+        stripA.classList.remove('opacity-45');
+        barA.className = 'h-full bg-rose-500 transition-all duration-200';
+        vFillA.className = 'w-full bg-rose-500 transition-all duration-200';
+        meterA.className = 'bg-rose-950/40 border border-rose-500 rounded-lg p-2.5 space-y-1.5 overload-pulse';
+      } else if (t.pduAPct > 80) {
+        stripA.classList.remove('opacity-45');
+        barA.className = 'h-full bg-amber-400 transition-all duration-200';
+        vFillA.className = 'w-full bg-amber-400 transition-all duration-200';
+        meterA.className = 'bg-dcim-bg border border-amber-500/60 rounded-lg p-2.5 space-y-1.5';
+      } else {
+        stripA.classList.remove('opacity-45');
+        document.getElementById('pdu-a-status-dot').className = 'w-2 h-2 rounded-full bg-cyan-400 mx-auto mt-1 shadow-[0_0_6px_#22d3ee]';
+        barA.className = 'h-full bg-gradient-to-r from-cyan-600 to-cyan-400 transition-all duration-200';
+        vFillA.className = 'w-full bg-gradient-to-t from-cyan-600 to-cyan-400 transition-all duration-200';
+        meterA.className = 'bg-dcim-bg border border-dcim-border rounded-lg p-2.5 space-y-1.5';
+      }
+
+      // PDU-B Telemetry & Flanking Strip
+      document.getElementById('telemetry-b-watts').textContent = `${Math.round(t.pduBWatts).toLocaleString()} W`;
+      document.getElementById('telemetry-b-amps').textContent = `${t.pduBAmps.toFixed(1)} A`;
+      document.getElementById('telemetry-b-sub').textContent = `${Math.round(t.pduBWatts).toLocaleString()}W / ${t.maxWattsPerPdu.toLocaleString()}W max`;
+      document.getElementById('telemetry-b-pct').textContent = `${t.pduBPct.toFixed(1)}%`;
+
+      const clampedB = Math.min(100, t.pduBPct);
+      const barB = document.getElementById('bar-feed-b');
+      const vFillB = document.getElementById('pdu-b-vertical-fill');
+      const meterB = document.getElementById('meter-box-b');
+      const stripB = document.getElementById('pdu-strip-b');
+
+      barB.style.width = `${clampedB}%`;
+      vFillB.style.height = `${clampedB}%`;
+      document.getElementById('pdu-b-pct-mini').textContent = t.pduBEnergized ? `${Math.round(t.pduBPct)}%` : 'DEAD';
+      document.getElementById('pdu-b-src-mini').textContent = t.pduBSourceType === 'ups' ? 'UPS-FED' : 'COMM B';
+
+      if (!t.pduBEnergized) {
+        stripB.classList.add('opacity-45');
+        document.getElementById('pdu-b-status-dot').className = 'w-2 h-2 rounded-full bg-rose-500 mx-auto mt-1';
+        meterB.className = 'bg-rose-950/25 border border-rose-800/70 rounded-lg p-2.5 space-y-1.5';
+      } else if (t.pduBPct > 100) {
+        stripB.classList.remove('opacity-45');
+        barB.className = 'h-full bg-rose-500 transition-all duration-200';
+        vFillB.className = 'w-full bg-rose-500 transition-all duration-200';
+        meterB.className = 'bg-rose-950/40 border border-rose-500 rounded-lg p-2.5 space-y-1.5 overload-pulse';
+      } else if (t.pduBPct > 80) {
+        stripB.classList.remove('opacity-45');
+        barB.className = 'h-full bg-rose-400 transition-all duration-200';
+        vFillB.className = 'w-full bg-rose-400 transition-all duration-200';
+        meterB.className = 'bg-dcim-bg border border-amber-500/60 rounded-lg p-2.5 space-y-1.5';
+      } else {
+        stripB.classList.remove('opacity-45');
+        document.getElementById('pdu-b-status-dot').className = 'w-2 h-2 rounded-full bg-amber-400 mx-auto mt-1 shadow-[0_0_6px_#fbbf24]';
+        barB.className = 'h-full bg-gradient-to-r from-amber-600 to-amber-400 transition-all duration-200';
+        vFillB.className = 'w-full bg-gradient-to-t from-amber-600 to-amber-400 transition-all duration-200';
+        meterB.className = 'bg-dcim-bg border border-dcim-border rounded-lg p-2.5 space-y-1.5';
+      }
+    }
+
+    /**
+     * =====================================================================
+     * 5. POWER & OUTAGE EVENT LOG
+     * =====================================================================
+     */
+    function appendEventLog(message, severity = 'info') {
+      const now = new Date();
+      const ts = now.toTimeString().split(' ')[0];
+      state.eventLog.unshift({ ts, message, severity });
+      if (state.eventLog.length > 50) state.eventLog.pop();
+      renderEventLog();
+    }
+
+    function clearEventLog() {
+      state.eventLog = [];
+      renderEventLog();
+    }
+
+    function renderEventLog() {
+      const el = document.getElementById('event-log-list');
+      if (state.eventLog.length === 0) {
+        el.innerHTML = `<div class="text-slate-500 italic py-2">No power events logged yet.</div>`;
+        return;
+      }
+      el.innerHTML = state.eventLog.map(entry => {
+        const color = entry.severity === 'crit'
+          ? 'text-rose-400'
+          : entry.severity === 'warn'
+            ? 'text-amber-300'
+            : entry.severity === 'ok'
+              ? 'text-emerald-300'
+              : 'text-slate-300';
+        return `
+          <div class="leading-snug border-b border-slate-800/60 pb-1">
+            <span class="text-slate-500">[${entry.ts}]</span>
+            <span class="${color}">${escapeHtml(entry.message)}</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    /**
+     * =====================================================================
+     * 6. INSPECTOR, CLEAR RACK & JSON EXPORT/IMPORT MODALS
+     * =====================================================================
+     */
+    function openInspector(instanceId, highlightUpsWiring = false) {
+      const dev = state.installedDevices.find(d => d.instanceId === instanceId);
+      if (!dev) return;
+
+      document.getElementById('insp-device-id').value = dev.instanceId;
+      document.getElementById('insp-model-title').textContent = `${dev.name} (${dev.uHeight}U)`;
+      document.getElementById('insp-label').value = dev.label;
+
+      // Populate valid RU slots
+      const uSelect = document.getElementById('insp-start-u');
+      let optionsHtml = '';
+      for (let u = state.rackHeight - dev.uHeight + 1; u >= 1; u--) {
+        const valid = isSlotRangeValid(u, dev.uHeight, dev.instanceId);
+        const label = dev.uHeight > 1 ? `U${u} – U${u + dev.uHeight - 1}` : `U${u}`;
+        optionsHtml += `<option value="${u}" ${u === dev.startU ? 'selected' : ''} ${!valid ? 'disabled' : ''}>${label}${!valid ? ' (Occupied)' : ''}</option>`;
+      }
+      uSelect.innerHTML = optionsHtml;
+
+      if (dev.isUps) {
+        document.getElementById('insp-badge-type').textContent = highlightUpsWiring
+          ? '⚡ Configure New UPS Input & Output Wiring'
+          : 'UPS Power & Wiring Configuration';
+        document.getElementById('insp-it-watts-group').classList.add('hidden');
+        document.getElementById('insp-it-feed-group').classList.add('hidden');
+        document.getElementById('insp-btu-box').classList.add('hidden');
+        document.getElementById('insp-ups-wiring-group').classList.remove('hidden');
+
+        document.getElementById('insp-ups-input').value = dev.upsInput;
+        document.getElementById('insp-ups-output').value = dev.upsOutput;
+        document.getElementById('insp-ups-rated').textContent = `${dev.ratedWatts}W`;
+        document.getElementById('insp-ups-wh').textContent = `${dev.batteryCapacityWh}Wh`;
+
+        const snap = evaluateRackElectricalState().upsStates.find(u => u.instanceId === dev.instanceId);
+        document.getElementById('insp-ups-runtime-badge').textContent = snap ? `Est: ${snap.timeRemainingFormatted}` : 'Est: --';
+      } else {
+        document.getElementById('insp-badge-type').textContent = 'IT Hardware Configuration';
+        document.getElementById('insp-it-watts-group').classList.remove('hidden');
+        document.getElementById('insp-it-feed-group').classList.remove('hidden');
+        document.getElementById('insp-btu-box').classList.remove('hidden');
+        document.getElementById('insp-ups-wiring-group').classList.add('hidden');
+
+        document.getElementById('insp-watts').value = dev.watts;
+        document.getElementById('insp-feed-mode').value = dev.feedMode;
+        updateInspectorPreview();
+      }
+
+      document.getElementById('inspector-modal').classList.remove('hidden');
+    }
+
+    function updateInspectorPreview() {
+      const watts = parseFloat(document.getElementById('insp-watts').value) || 0;
+      document.getElementById('insp-btu-preview').textContent = `${Math.round(watts * WATTS_TO_BTU).toLocaleString()} BTU/hr`;
+    }
+
+    function closeInspector() {
+      document.getElementById('inspector-modal').classList.add('hidden');
+    }
+
+    function saveInspectorChanges(e) {
+      e.preventDefault();
+      const id = document.getElementById('insp-device-id').value;
+      const dev = state.installedDevices.find(d => d.instanceId === id);
+      if (!dev) return;
+
+      const newStartU = parseInt(document.getElementById('insp-start-u').value, 10);
+      if (!isSlotRangeValid(newStartU, dev.uHeight, dev.instanceId)) {
+        showToast('Selected RU range is occupied!');
+        return;
+      }
+
+      dev.label = document.getElementById('insp-label').value.trim() || dev.label;
+      dev.startU = newStartU;
+
+      if (dev.isUps) {
+        dev.upsInput = document.getElementById('insp-ups-input').value;
+        dev.upsOutput = document.getElementById('insp-ups-output').value;
+        const inLabel = dev.upsInput === 'A' ? 'Comm A' : 'Comm B';
+        const outLabel = dev.upsOutput === 'AB' ? 'A+B' : `Feed ${dev.upsOutput}`;
+        appendEventLog(`Configured ${dev.label} wiring: Input = ${inLabel} → Output = ${outLabel}.`, 'info');
+      } else {
+        dev.watts = Math.max(0, parseFloat(document.getElementById('insp-watts').value) || 0);
+        dev.feedMode = document.getElementById('insp-feed-mode').value;
+      }
+
+      closeInspector();
+      renderAllTelemetry();
+      showToast(`Saved configuration for ${dev.label}`);
+    }
+
+    function deleteInspectedDevice() {
+      const id = document.getElementById('insp-device-id').value;
+      const dev = state.installedDevices.find(d => d.instanceId === id);
+      state.installedDevices = state.installedDevices.filter(d => d.instanceId !== id);
+      closeInspector();
+      renderAllTelemetry();
+      if (dev) {
+        appendEventLog(`Removed ${dev.label} from rack.`, 'info');
+        showToast(`Removed ${dev.label}`);
+      }
+    }
+
+    function confirmClearRack() {
+      document.getElementById('clear-rack-name').textContent = state.rackName;
+      document.getElementById('clear-modal').classList.remove('hidden');
+    }
+
+    function closeClearModal() {
+      document.getElementById('clear-modal').classList.add('hidden');
+    }
+
+    function executeClearRack() {
+      state.installedDevices = [];
+      state.previousUpsModes = {};
+      closeClearModal();
+      appendEventLog('All equipment cleared from rack.', 'warn');
+      renderAllTelemetry();
+      showToast('Rack cleared');
+    }
+
+    function openJsonModal() {
+      const payload = {
+        app: 'RackEnv Pro',
+        rackName: state.rackName,
+        rackHeight: state.rackHeight,
+        voltage: state.voltage,
+        installedDevices: state.installedDevices
+      };
+      document.getElementById('json-textarea').value = JSON.stringify(payload, null, 2);
+      document.getElementById('json-modal').classList.remove('hidden');
+    }
+
+    function closeJsonModal() {
+      document.getElementById('json-modal').classList.add('hidden');
+    }
+
+    function copyRackJson() {
+      const ta = document.getElementById('json-textarea');
+      ta.select();
+      try {
+        document.execCommand('copy');
+        showToast('RackEnv Pro JSON copied to clipboard');
+      } catch (err) {
+        showToast('Select and copy JSON manually');
+      }
+    }
+
+    function importRackJson() {
+      try {
+        const parsed = JSON.parse(document.getElementById('json-textarea').value);
+        if (!parsed || !Array.isArray(parsed.installedDevices)) throw new Error('Invalid schema');
+
+        state.rackName = parsed.rackName || 'IMPORTED-RACK';
+        state.rackHeight = [24, 42, 48].includes(parsed.rackHeight) ? parsed.rackHeight : 42;
+        state.voltage = [120, 208].includes(parsed.voltage) ? parsed.voltage : 208;
+        state.installedDevices = parsed.installedDevices;
+        state.previousUpsModes = {};
+
+        document.getElementById('rack-name-input').value = state.rackName;
+        document.getElementById('rack-height-select').value = String(state.rackHeight);
+        updateVoltageButtons();
+
+        closeJsonModal();
+        renderRackStructure();
+        renderAllTelemetry();
+        appendEventLog(`Imported ${state.installedDevices.length} devices from JSON.`, 'ok');
+        showToast(`Imported ${state.installedDevices.length} devices`);
+      } catch (err) {
+        showToast('Invalid JSON format');
+      }
+    }
+
+    /**
+     * Utilities: Toast & HTML Escaping
+     */
+    let toastTimer = null;
+    function showToast(msg) {
+      const banner = document.getElementById('toast-banner');
+      document.getElementById('toast-message').textContent = msg;
+      banner.classList.remove('opacity-0', 'translate-y-2');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        banner.classList.add('opacity-0', 'translate-y-2');
+      }, 2800);
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+  </script>
+</body>
+</html>
