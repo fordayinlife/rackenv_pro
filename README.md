@@ -4,6 +4,7 @@
 
 RackEnv Pro is a zero-dependency, browser-based Data Center Infrastructure Management (DCIM) planning and power-simulation application. It enables infrastructure engineers, solutions architects, and lab operators to design EIA-310-D server rack elevations, configure upstream and downstream Uninterruptible Power Supply (UPS) wiring, simulate commercial utility outages, and monitor live power, thermal (`BTU/hr`), and battery runtime telemetry.
 
+![Description of the screenshot](rackenv-screenshot01.png)
 ---
 
 ## Table of Contents
